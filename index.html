@@ -97,7 +97,7 @@
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-400">Global Batch</span>
-                        <span id="local-games-count" class="text-gray-200">0 / 16</span>
+                        <span id="local-games-count" class="text-gray-200">0 / 2</span>
                     </div>
                     
                     <!-- Training Progress Bar -->
@@ -131,7 +131,7 @@
             <!-- Instructions -->
             <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700 text-xs text-gray-400">
                 <p class="mb-2"><strong class="text-gray-300">Hive Mind Active:</strong></p>
-                <p>The AI is connected to a global database. When <span class="text-white font-bold">16 games</span> are played by the community (you + everyone else), this AI will automatically retrain on the new collective knowledge.</p>
+                <p>The AI is connected to a global database. When <span class="text-white font-bold">2 games</span> are played by the community (you + everyone else), this AI will automatically retrain on the new collective knowledge.</p>
             </div>
         </div>
 
@@ -223,7 +223,7 @@
         let lastGlobalCount = -1; // Track last training point
         let selectedSquare = null;
         
-        const GAMES_PER_TRAINING = 16;
+        const GAMES_PER_TRAINING = 2;
         const HIVE_SLOTS = 20; // Number of shared memory slots in cloud
         const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 }; // Simple material values for fallback
         
@@ -689,7 +689,7 @@
         }
 
         function updateGlobalProgressUI(globalCount) {
-            // Calculate progress within the current batch of 16
+            // Calculate progress within the current batch of 2
             const batchProgress = globalCount % GAMES_PER_TRAINING;
             const percent = Math.min(100, (batchProgress / GAMES_PER_TRAINING) * 100);
             
@@ -750,7 +750,7 @@
                         }
 
                         // CHECK FOR GLOBAL BATCH COMPLETION
-                        // If we crossed a multiple of 16 since last check
+                        // If we crossed a multiple of 2 since last check
                         const lastBatch = Math.floor(lastGlobalCount / GAMES_PER_TRAINING);
                         const currentBatch = Math.floor(currentCount / GAMES_PER_TRAINING);
 
