@@ -395,6 +395,12 @@
                     weightData: weightsBytes.buffer
                 }));
                 
+                // FIX: Compile the loaded model
+                model.compile({ 
+                    optimizer: tf.train.adam(0.001), 
+                    loss: 'meanSquaredError'
+                });
+                
                 console.log(`Loaded gen ${modelGeneration}`);
                 await model.save('localstorage://chess-ai-model');
                 
@@ -417,6 +423,13 @@
                 
                 try {
                     aiModel = await tf.loadLayersModel('localstorage://chess-ai-model');
+                    
+                    // FIX: Compile the loaded model
+                    aiModel.compile({ 
+                        optimizer: tf.train.adam(0.001), 
+                        loss: 'meanSquaredError'
+                    });
+                    
                     console.log("Loaded model from storage");
                     updateAIState("Ready (Loaded)");
                     return;
