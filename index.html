@@ -131,7 +131,7 @@
             <!-- Instructions -->
             <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700 text-xs text-gray-400">
                 <p class="mb-2"><strong class="text-gray-300">Hive Mind Active:</strong></p>
-                <p>The AI is connected to a global database. When <span class="text-white font-bold">2 games</span> are played by the community (you + everyone else), this AI will automatically retrain on the new collective knowledge.</p>
+                <p>The AI is connected to a global database. When <span class="text-white font-bold">2 games</span> are played by the community (you + everyone else), this AI will automatically retrain on the new collective knowledge between games.</p>
             </div>
         </div>
 
@@ -222,6 +222,7 @@
         let gameHistory = []; // Replay buffer
         let lastGlobalCount = -1; // Track last training point
         let selectedSquare = null;
+        let trainingPending = false; // Flag to defer training until game ends
         
         const GAMES_PER_TRAINING = 2;
         const HIVE_SLOTS = 20; // Number of shared memory slots in cloud
@@ -409,34 +410,30 @@
         }
 
         async function trainModel() {
-            // If we have no local history and haven't fetched hive yet, we proceed anyway to sync
+            // Block re-entry if already training
+            if (isTraining) return;
             
             isTraining = true;
             updateAIState("Hive Training Started...");
             
-            // Determine UI Mode: Full Overlay vs Background
-            const isPlaying = !game.game_over() && game.history().length > 0;
+            // ALWAYS show full overlay for training - never background
             const overlay = document.getElementById('board-overlay');
             const trainingInd = document.getElementById('training-indicator');
             const msg = document.getElementById('overlay-msg');
             const title = document.getElementById('overlay-title');
             
-            if (!isPlaying) {
-                overlay.classList.remove('hidden');
-                trainingInd.classList.remove('hidden');
-                title.textContent = "Hive Learning Phase";
-                msg.textContent = "Community threshold reached. Upgrading brain...";
-                document.getElementById('btn-overlay-new').classList.add('hidden');
-            } else {
-                updateStatus("⚠️ Neural Network Upgrading in Background...");
-            }
+            overlay.classList.remove('hidden');
+            trainingInd.classList.remove('hidden');
+            title.textContent = "Hive Learning Phase";
+            msg.textContent = "Community threshold reached. Upgrading brain...";
+            document.getElementById('btn-overlay-new').classList.add('hidden');
 
             // 1. Fetch Community Data
             const communityGames = await fetchHiveMemories();
             
             // 2. Combine Local + Community
             const trainingSet = [...gameHistory, ...communityGames];
-            if (!isPlaying) msg.textContent = `Consuming ${trainingSet.length} positions...`;
+            msg.textContent = `Consuming ${trainingSet.length} positions...`;
 
             if (trainingSet.length === 0) {
                 finishTraining(overlay, trainingInd);
@@ -477,22 +474,25 @@
 
             // Save Model
             await aiModel.save('localstorage://chess-ai-model');
-            
-            // Reset buffer (optional, or keep for next sync? Let's keep local buffer but it's not main trigger anymore)
-            // gameHistory = []; 
 
-            finishTraining(overlay, trainingInd, isPlaying);
+            finishTraining(overlay, trainingInd);
         }
 
-        function finishTraining(overlay, trainingInd, isPlaying) {
+        function finishTraining(overlay, trainingInd) {
             isTraining = false;
+            trainingPending = false; // Clear the flag
             updateAIState("Hive Sync Complete");
-            updateStatus(isPlaying ? "Brain Upgraded. Your Turn." : "");
             
-            if (!isPlaying) {
-                trainingInd.classList.add('hidden');
-                document.getElementById('btn-overlay-new').classList.remove('hidden');
-                document.getElementById('overlay-msg').textContent = "I have learned from the community.";
+            trainingInd.classList.add('hidden');
+            document.getElementById('btn-overlay-new').classList.remove('hidden');
+            document.getElementById('overlay-msg').textContent = "I have learned from the community. Ready for next game!";
+        }
+
+        // Check if training should be triggered when starting a new game
+        function checkAndTriggerTraining() {
+            if (trainingPending && !isTraining) {
+                console.log("Triggering deferred training...");
+                trainModel();
             }
         }
 
@@ -573,7 +573,8 @@
         }
 
         async function onSquareClick(square) {
-            if (isTraining && game.game_over()) return; // Block input only if training AND game over (overlay present)
+            // Block ALL input during training
+            if (isTraining) return;
             if (game.turn() === 'b' && !game.game_over()) return; // AI Turn block
 
             if (selectedSquare === square) {
@@ -724,7 +725,8 @@
             
             recordGameData(result);
             
-            // Removed local trainModel() trigger. Now relies on onSnapshot of Global Stats.
+            // Check if training was pending and trigger now
+            checkAndTriggerTraining();
         }
         
         // --- 4. Firebase Integration ---
@@ -755,8 +757,16 @@
                         const currentBatch = Math.floor(currentCount / GAMES_PER_TRAINING);
 
                         if (currentBatch > lastBatch) {
-                             console.log("Global Batch Complete! Triggering Community Training...");
-                             trainModel();
+                            console.log("Global Batch Complete! Training will trigger at game end...");
+                            
+                            // Set flag instead of training immediately
+                            trainingPending = true;
+                            
+                            // If currently between games (game is over or fresh), trigger now
+                            if (game.game_over() || game.history().length === 0) {
+                                checkAndTriggerTraining();
+                            }
+                            // Otherwise, it will trigger when the current game ends
                         }
                         
                         lastGlobalCount = currentCount;
@@ -795,12 +805,18 @@
         // --- 5. Event Listeners ---
 
         document.getElementById('btn-new-game').addEventListener('click', () => {
-            game.reset();
-            selectedSquare = null;
-            renderBoard();
-            document.getElementById('move-history').innerHTML = '';
-            document.getElementById('board-overlay').classList.add('hidden');
-            updateAIState("Ready");
+            // Check for pending training before starting new game
+            if (trainingPending && !isTraining) {
+                checkAndTriggerTraining();
+                // The training overlay will show, user can start new game after
+            } else {
+                game.reset();
+                selectedSquare = null;
+                renderBoard();
+                document.getElementById('move-history').innerHTML = '';
+                document.getElementById('board-overlay').classList.add('hidden');
+                updateAIState("Ready");
+            }
         });
 
         document.getElementById('btn-overlay-new').addEventListener('click', () => {
