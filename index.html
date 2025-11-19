@@ -232,13 +232,17 @@
         
         const GAMES_PER_TRAINING = 2;
         const HIVE_SLOTS = 20;
-        const MCTS_SIMULATIONS = 80;  // Increased for better play
+        const MCTS_SIMULATIONS = 128;  // More simulations for stronger play
         const PIECE_VALUES = { p: 1, n: 3, b: 3.2, r: 5, q: 9, k: 0 };
         const GAMMA = 0.99;  // Discount factor for reward propagation
+
+        // AI configuration
+        const AI_COLOR = 'b';              // AI plays Black
+        const EPSILON_EXPLORATION = 0.15;  // ε-greedy exploration
         
         // --- 2. Enhanced AI / TensorFlow Logic ---
 
-        // MCTS Node Class with improved UCB
+        // MCTS Node Class with adversarial UCB (max for side to move)
         class MCTSNode {
             constructor(gameState, move = null, parent = null) {
                 this.gameState = new Chess(gameState.fen());
@@ -246,26 +250,39 @@
                 this.parent = parent;
                 this.children = [];
                 this.visits = 0;
-                this.value = 0;
-                this.untriedMoves = gameState.moves({ verbose: true });
+                this.value = 0; // accumulated eval from White's perspective
+                this.playerToMove = this.gameState.turn(); // 'w' or 'b'
+                this.untriedMoves = this.gameState.moves({ verbose: true });
             }
 
             isFullyExpanded() {
                 return this.untriedMoves.length === 0;
             }
 
+            // White wants to maximize White eval; Black wants to minimize it
             bestChild(explorationParam = 1.41) {
-                return this.children.reduce((best, child) => {
-                    const exploitation = child.value / (child.visits + 1e-8);
-                    const exploration = Math.sqrt(Math.log(this.visits + 1) / (child.visits + 1e-8));
+                let bestScore = -Infinity;
+                let bestChild = null;
+                const isWhiteToMove = (this.playerToMove === 'w');
+
+                for (const child of this.children) {
+                    const qWhite = child.value / (child.visits + 1e-8); // avg from White's perspective
+
+                    // If White to move: larger qWhite is better.
+                    // If Black to move: smaller qWhite is better → multiply by -1.
+                    const exploitation = isWhiteToMove ? qWhite : -qWhite;
+                    const exploration = Math.sqrt(
+                        Math.log(this.visits + 1) / (child.visits + 1e-8)
+                    );
                     const uct = exploitation + explorationParam * exploration;
-                    
-                    const bestExploitation = best.value / (best.visits + 1e-8);
-                    const bestExploration = Math.sqrt(Math.log(this.visits + 1) / (best.visits + 1e-8));
-                    const bestUct = bestExploitation + explorationParam * bestExploration;
-                    
-                    return uct > bestUct ? child : best;
-                });
+
+                    if (uct > bestScore) {
+                        bestScore = uct;
+                        bestChild = child;
+                    }
+                }
+
+                return bestChild;
             }
 
             expand() {
@@ -320,18 +337,18 @@
                 input[offset++] = piece && piece.color === 'b' ? 1 : 0;
             }
             
-            // Castling rights
-            input[offset++] = chess.castling.w & chess.castling.KING_SIDE ? 1 : 0;
-            input[offset++] = chess.castling.w & chess.castling.QUEEN_SIDE ? 1 : 0;
-            input[offset++] = chess.castling.b & chess.castling.KING_SIDE ? 1 : 0;
-            input[offset++] = chess.castling.b & chess.castling.QUEEN_SIDE ? 1 : 0;
+            // Castling rights (defensive checks; chess.js internals may differ)
+            input[offset++] = chess.castling && (chess.castling.w & chess.castling.KING_SIDE) ? 1 : 0;
+            input[offset++] = chess.castling && (chess.castling.w & chess.castling.QUEEN_SIDE) ? 1 : 0;
+            input[offset++] = chess.castling && (chess.castling.b & chess.castling.KING_SIDE) ? 1 : 0;
+            input[offset++] = chess.castling && (chess.castling.b & chess.castling.QUEEN_SIDE) ? 1 : 0;
             
-            // King safety
-            const wKingSquare = chess.SQUARES[chess.kings.w];
-            const bKingSquare = chess.SQUARES[chess.kings.b];
-            input[offset++] = wKingSquare ? wKingSquare.charCodeAt(0) - 97 / 7.0 : 0;
+            // King safety (kept as in original version)
+            const wKingSquare = chess.SQUARES && chess.kings ? chess.SQUARES[chess.kings.w] : null;
+            const bKingSquare = chess.SQUARES && chess.kings ? chess.SQUARES[chess.kings.b] : null;
+            input[offset++] = wKingSquare ? (wKingSquare.charCodeAt(0) - 97) / 7.0 : 0;
             input[offset++] = wKingSquare ? parseInt(wKingSquare[1]) / 8.0 : 0;
-            input[offset++] = bKingSquare ? bKingSquare.charCodeAt(0) - 97 / 7.0 : 0;
+            input[offset++] = bKingSquare ? (bKingSquare.charCodeAt(0) - 97) / 7.0 : 0;
             input[offset++] = bKingSquare ? parseInt(bKingSquare[1]) / 8.0 : 0;
             
             // Game phase (remaining material)
@@ -396,15 +413,13 @@
             return model;
         }
 
-        // FIXED: Proper base64 conversion without stack overflow
+        // Proper base64 conversion
         function arrayBufferToBase64(buffer) {
-            // Use Array.from with map to avoid stack overflow
             const bytes = new Uint8Array(buffer);
             const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
             return btoa(binary);
         }
 
-        // Helper to convert base64 back to ArrayBuffer
         function base64ToArrayBuffer(base64) {
             const binary = atob(base64);
             const bytes = new Uint8Array(binary.length);
@@ -443,7 +458,6 @@
                 return true;
             } catch (e) {
                 console.error("Save to cloud failed:", e);
-                // Fallback to local storage only
                 try {
                     await model.save('localstorage://chess-ai-model-v2');
                     console.log("Saved to local storage only");
@@ -531,16 +545,16 @@
             }
         }
 
-        // Enhanced evaluation with positional understanding
+        // Enhanced evaluation (White-perspective)
         async function evaluateBoard(fen) {
             const chess = new Chess(fen);
             
             // Material count
             let material = 0;
-            const board = chess.board();
-            for(let row of board) {
-                for(let p of row) {
-                    if(p) {
+            const boardArr = chess.board();
+            for (let row of boardArr) {
+                for (let p of row) {
+                    if (p) {
                         const val = PIECE_VALUES[p.type] || 0;
                         material += (p.color === 'w' ? val : -val);
                     }
@@ -558,23 +572,38 @@
                 }
             }
             
-            // Mobility
-            const turnBackup = chess.turn();
-            let whiteMoves = chess.moves().length;
-            chess.load(fen);
-            // Simulate black's turn
-            const fenParts = fen.split(' ');
-            fenParts[1] = 'b';
-            try {
-                chess.load(fenParts.join(' '));
-                var blackMoves = chess.moves().length;
-            } catch(e) {
-                var blackMoves = 0;
+            // Mobility: compute white and black moves from same position
+            const originalFen = chess.fen();
+
+            // White mobility
+            let whiteMoves;
+            {
+                const parts = originalFen.split(' ');
+                parts[1] = 'w';
+                try {
+                    chess.load(parts.join(' '));
+                    whiteMoves = chess.moves().length;
+                } catch {
+                    whiteMoves = 0;
+                }
             }
-            chess.load(fen);
+
+            // Black mobility
+            let blackMoves;
+            {
+                const parts = originalFen.split(' ');
+                parts[1] = 'b';
+                try {
+                    chess.load(parts.join(' '));
+                    blackMoves = chess.moves().length;
+                } catch {
+                    blackMoves = 0;
+                }
+            }
+
             const mobility = (whiteMoves - blackMoves) / 20.0;
             
-            // Heuristic combination
+            // Heuristic
             const heuristic = Math.tanh(
                 (material / 20.0) + 
                 (centerControl / 4.0) + 
@@ -582,81 +611,111 @@
             );
 
             // Neural network evaluation
-            const tensor = boardToTensor(fen);
+            const tensor = boardToTensor(originalFen);
             const prediction = aiModel.predict(tensor);
             const nnValue = (await prediction.data())[0];
             tensor.dispose();
             prediction.dispose();
 
-            // Blend heuristic and neural network (more weight on NN as it trains)
+            // Blend heuristic and NN (White-perspective)
             return (heuristic * 0.4) + (nnValue * 0.6);
         }
 
-        // MCTS Implementation
+        // MCTS (White-perspective eval)
         async function runMCTS(rootState, simulations) {
             const root = new MCTSNode(rootState);
-            
+
             for (let i = 0; i < simulations; i++) {
                 let node = root;
                 const simGame = new Chess(rootState.fen());
-                
+
                 // Selection
-                while (node.isFullyExpanded() && node.children.length > 0) {
+                while (node.isFullyExpanded() && node.children.length > 0 && !simGame.game_over()) {
                     node = node.bestChild();
                     simGame.move(node.move);
                 }
-                
+
                 // Expansion
-                if (!node.gameState.game_over() && node.untriedMoves.length > 0) {
+                if (!simGame.game_over() && node.untriedMoves.length > 0) {
                     node = node.expand();
                     simGame.load(node.gameState.fen());
                 }
-                
-                // Simulation (use NN evaluation)
-                let value = 0;
+
+                // Simulation / Evaluation (White-perspective value)
+                let whiteValue;
                 if (simGame.game_over()) {
                     if (simGame.in_checkmate()) {
-                        value = simGame.turn() === 'w' ? -1 : 1;
+                        // turn() is side to move and is checkmated
+                        const winnerIsWhite = simGame.turn() === 'b';
+                        whiteValue = winnerIsWhite ? 1 : -1;
                     } else {
-                        value = 0;  // Draw
+                        whiteValue = 0; // draw
                     }
                 } else {
-                    value = await evaluateBoard(simGame.fen());
+                    whiteValue = await evaluateBoard(simGame.fen());
                 }
-                
-                // Backpropagation
-                while (node !== null) {
-                    node.visits++;
-                    node.value += value;
-                    node = node.parent;
-                    value = -value;
+
+                // Backpropagate without sign flip (stored as White eval everywhere)
+                let nodePtr = node;
+                while (nodePtr !== null) {
+                    nodePtr.visits++;
+                    nodePtr.value += whiteValue;
+                    nodePtr = nodePtr.parent;
                 }
             }
-            
+
             if (root.children.length === 0) return null;
-            
-            // Select move with most visits (most explored)
-            return root.children.reduce((best, child) => 
-                child.visits > best.visits ? child : best
-            ).move;
+
+            // Collect stats
+            const movesStats = root.children.map(child => ({
+                move: child.move,
+                visits: child.visits,
+                qWhite: child.value / (child.visits + 1e-8)
+            }));
+
+            // Most visited move = default best
+            let bestChild = root.children[0];
+            for (const child of root.children) {
+                if (child.visits > bestChild.visits) {
+                    bestChild = child;
+                }
+            }
+
+            return { bestMove: bestChild.move, movesStats };
         }
 
-        // Get Best Move (using MCTS)
+        // Get Best Move (MCTS + ε-greedy, confidence from AI POV)
         async function getBestMove(depth) {
-            const moves = game.moves({ verbose: true });
-            if (moves.length === 0) return null;
+            const legalMoves = game.moves({ verbose: true });
+            if (legalMoves.length === 0) return null;
 
             updateAIState(`Thinking...`);
 
-            const move = await runMCTS(game, MCTS_SIMULATIONS);
-            
-            if (move) {
-                const value = await evaluateBoard(game.fen());
-                const confEl = document.getElementById('ai-confidence');
-                if(confEl) confEl.textContent = value.toFixed(3);
+            const result = await runMCTS(game, MCTS_SIMULATIONS);
+            if (!result) return null;
+
+            const { bestMove, movesStats } = result;
+
+            // ε-greedy: usually choose best, sometimes explore another strong move
+            let chosenMove = bestMove;
+            if (Math.random() < EPSILON_EXPLORATION && movesStats.length > 1) {
+                const sorted = [...movesStats].sort((a, b) => b.visits - a.visits);
+                const topK = sorted.slice(0, Math.min(3, sorted.length));
+                const randomIdx = Math.floor(Math.random() * topK.length);
+                chosenMove = topK[randomIdx].move;
             }
-            
-            return move;
+
+            // Confidence: convert from White-perspective to AI-perspective
+            const statForChosen =
+                movesStats.find(s => s.move === chosenMove) || movesStats[0];
+
+            const whiteQ = statForChosen.qWhite;               // >0: White happy
+            const aiQ = (AI_COLOR === 'w') ? whiteQ : -whiteQ; // >0: AI happy
+
+            const confEl = document.getElementById('ai-confidence');
+            if (confEl) confEl.textContent = aiQ.toFixed(3);
+
+            return chosenMove;
         }
 
         // --- Hive Mind Functions ---
@@ -687,8 +746,8 @@
                 const snapshot = await getDocs(hiveRef);
                 
                 let collectiveMemories = [];
-                snapshot.forEach(doc => {
-                    const data = doc.data();
+                snapshot.forEach(docSnap => {
+                    const data = docSnap.data();
                     if (data.games && Array.isArray(data.games)) {
                         collectiveMemories = [...collectiveMemories, ...data.games];
                     }
@@ -702,7 +761,40 @@
             }
         }
 
-        // IMPROVED: Better training with temporal difference learning
+        // Record game with temporal-difference reward propagation
+        function recordGameData(result) {
+            const tempGame = new Chess();
+            const history = game.history();
+            
+            let currentGamePositions = [];
+            
+            const positions = [];
+            history.forEach(move => {
+                positions.push(tempGame.fen());
+                tempGame.move(move);
+            });
+            positions.push(tempGame.fen());  // Final position
+            
+            const values = [];
+            let currentValue = result;  // Final White-perspective reward
+            
+            for (let i = positions.length - 1; i >= 0; i--) {
+                values[i] = currentValue;
+                currentValue = currentValue * GAMMA;
+            }
+            
+            for (let i = 0; i < positions.length; i++) {
+                currentGamePositions.push({
+                    fen: positions[i],
+                    value: values[i]
+                });
+            }
+            
+            gameHistory = [...gameHistory, ...currentGamePositions];
+            uploadToHive(currentGamePositions);
+            incrementGlobalStats();
+        }
+
         async function trainModel() {
             if (isTraining) return;
             
@@ -734,20 +826,18 @@
             const MAX_TRAINING_SAMPLES = 600;
             const shuffled = trainingSet.sort(() => 0.5 - Math.random()).slice(0, MAX_TRAINING_SAMPLES);
 
-            // Build training data
             for (const record of shuffled) {
                 const t = boardToTensor(record.fen);
                 const d = await t.data();
                 inputs.push(Array.from(d));
-                labels.push(record.value);  // Using propagated values now
+                labels.push(record.value);
                 t.dispose();
             }
 
             const inputTensor = tf.tensor2d(inputs, [inputs.length, 896]);
             const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
 
-            // Training with validation split and learning rate scheduling
-            const history = await aiModel.fit(inputTensor, labelTensor, {
+            await aiModel.fit(inputTensor, labelTensor, {
                 epochs: 20,
                 batchSize: 32,
                 shuffle: true,
@@ -787,6 +877,43 @@
             }
         }
 
+        function updateGlobalProgressUI(globalCount) {
+            const batchProgress = globalCount % GAMES_PER_TRAINING;
+            const percent = Math.min(100, (batchProgress / GAMES_PER_TRAINING) * 100);
+            
+            document.getElementById('local-games-count').textContent = `${batchProgress} / ${GAMES_PER_TRAINING}`;
+            document.getElementById('training-progress').style.width = `${percent}%`;
+            document.getElementById('buffer-percent').textContent = `${Math.floor(percent)}%`;
+        }
+
+        async function handleGameOver() {
+            let msg = "";
+            let result = 0;
+
+            if (game.in_checkmate()) {
+                if (game.turn() === 'w') {
+                    msg = "Checkmate! AI (Black) Wins!";
+                    result = -1;  // bad for White
+                } else {
+                    msg = "Checkmate! You (White) Win!";
+                    result = 1;   // good for White
+                }
+            } else if (game.in_draw()) {
+                msg = "Draw!";
+                result = 0;
+            } else {
+                msg = "Game Over";
+            }
+
+            document.getElementById('overlay-msg').textContent = msg;
+            document.getElementById('board-overlay').classList.remove('hidden');
+            document.getElementById('training-indicator').classList.add('hidden');
+            document.getElementById('overlay-title').textContent = "Game Finished";
+            
+            recordGameData(result);
+            checkAndTriggerTraining();
+        }
+        
         // --- 3. Board Logic & UI ---
 
         const PIECE_UNICODE = {
@@ -889,7 +1016,7 @@
 
         async function onSquareClick(square) {
             if (isTraining) return;
-            if (game.turn() === 'b' && !game.game_over()) return;
+            if (game.turn() === AI_COLOR && !game.game_over()) return;
 
             if (selectedSquare === square) {
                 selectedSquare = null;
@@ -963,82 +1090,6 @@
             document.getElementById('ai-state').textContent = text;
         }
 
-        // IMPROVED: Record game with temporal difference reward propagation
-        function recordGameData(result) {
-            const tempGame = new Chess();
-            const history = game.history();
-            
-            let currentGamePositions = [];
-            
-            // Build position array with FENs
-            const positions = [];
-            history.forEach(move => {
-                positions.push(tempGame.fen());
-                tempGame.move(move);
-            });
-            positions.push(tempGame.fen());  // Final position
-            
-            // Propagate rewards backwards using temporal difference
-            const values = [];
-            let currentValue = result;  // Final reward
-            
-            // Work backwards from end to start
-            for (let i = positions.length - 1; i >= 0; i--) {
-                values[i] = currentValue;
-                // Discount factor for temporal credit assignment
-                currentValue = currentValue * GAMMA;
-            }
-            
-            // Create training data with propagated values
-            for (let i = 0; i < positions.length; i++) {
-                currentGamePositions.push({
-                    fen: positions[i],
-                    value: values[i]
-                });
-            }
-            
-            gameHistory = [...gameHistory, ...currentGamePositions];
-            uploadToHive(currentGamePositions);
-            incrementGlobalStats();
-        }
-
-        function updateGlobalProgressUI(globalCount) {
-            const batchProgress = globalCount % GAMES_PER_TRAINING;
-            const percent = Math.min(100, (batchProgress / GAMES_PER_TRAINING) * 100);
-            
-            document.getElementById('local-games-count').textContent = `${batchProgress} / ${GAMES_PER_TRAINING}`;
-            document.getElementById('training-progress').style.width = `${percent}%`;
-            document.getElementById('buffer-percent').textContent = `${Math.floor(percent)}%`;
-        }
-
-        async function handleGameOver() {
-            let msg = "";
-            let result = 0;
-
-            if (game.in_checkmate()) {
-                if (game.turn() === 'w') {
-                    msg = "Checkmate! AI (Black) Wins!";
-                    result = -1;  // Black wins
-                } else {
-                    msg = "Checkmate! You (White) Win!";
-                    result = 1;  // White wins
-                }
-            } else if (game.in_draw()) {
-                msg = "Draw!";
-                result = 0;
-            } else {
-                msg = "Game Over";
-            }
-
-            document.getElementById('overlay-msg').textContent = msg;
-            document.getElementById('board-overlay').classList.remove('hidden');
-            document.getElementById('training-indicator').classList.add('hidden');
-            document.getElementById('overlay-title').textContent = "Game Finished";
-            
-            recordGameData(result);
-            checkAndTriggerTraining();
-        }
-        
         // --- 4. Firebase Integration ---
 
         async function initApp() {
@@ -1074,8 +1125,8 @@
                         lastGlobalCount = currentCount;
 
                     } else {
-                         setDoc(statsRef, { gamesPlayed: 0 }, { merge: true });
-                         document.getElementById('global-counter').textContent = "0";
+                        setDoc(statsRef, { gamesPlayed: 0 }, { merge: true });
+                        document.getElementById('global-counter').textContent = "0";
                     }
                 }, (error) => {
                     console.error("Stats listener error:", error);
@@ -1093,15 +1144,15 @@
         }
 
         async function incrementGlobalStats() {
-             try {
+            try {
                 if (!auth.currentUser) return;
                 const statsRef = doc(db, 'artifacts', appId, 'public', 'data', 'chess_stats', 'global');
                 await updateDoc(statsRef, {
                     gamesPlayed: increment(1)
                 });
-             } catch(e) {
-                 console.log("Could not update global stats", e);
-             }
+            } catch(e) {
+                console.log("Could not update global stats", e);
+            }
         }
 
         // --- 5. Event Listeners ---
