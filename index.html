@@ -203,7 +203,6 @@
 
         // --- 1. Configuration & Globals ---
         
-        // UPDATED CONFIGURATION
         const firebaseConfig = {
             apiKey: "AIzaSyABBWaOz5jtfoethdlpWztnFpIDsb7SRvg",
             authDomain: "neuralzero-chess.firebaseapp.com",
@@ -214,8 +213,7 @@
             measurementId: "G-Y6T07XBS8N"
         };
 
-        // Unique identifier for your app's data in the database
-        const appId = 'neuralzero-chess-v1';
+        const appId = 'neuralzero-chess-v3-enhanced';
         
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -226,68 +224,217 @@
         let board = null;
         let aiModel = null;
         let isTraining = false;
-        let gameHistory = []; // Replay buffer
-        let lastGlobalCount = -1; // Track last training point
+        let gameHistory = [];
+        let lastGlobalCount = -1;
         let selectedSquare = null;
-        let trainingPending = false; // Flag to defer training until game ends
+        let trainingPending = false;
+        let modelGeneration = 0;
         
         const GAMES_PER_TRAINING = 2;
-        const HIVE_SLOTS = 20; // Number of shared memory slots in cloud
-        const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 }; // Simple material values for fallback
+        const HIVE_SLOTS = 20;
+        const MCTS_SIMULATIONS = 50;
+        const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
         
-        // --- 2. AI / TensorFlow Logic ---
+        // --- 2. Enhanced AI / TensorFlow Logic ---
 
-        // Initialize or Load Model
-        async function initModel() {
-            try {
-                // Try loading from local storage
-                aiModel = await tf.loadLayersModel('localstorage://chess-ai-model');
-                console.log("Loaded model from storage");
-                updateAIState("Ready (Loaded)");
-            } catch (e) {
-                console.log("Creating new model");
-                // Create a simple dense network
-                aiModel = tf.sequential();
-                aiModel.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [768] }));
-                aiModel.add(tf.layers.dropout({ rate: 0.2 }));
-                aiModel.add(tf.layers.dense({ units: 64, activation: 'relu' }));
-                aiModel.add(tf.layers.dense({ units: 1, activation: 'tanh' })); // Output -1 to 1
-                
-                aiModel.compile({ optimizer: tf.train.adam(0.001), loss: 'meanSquaredError' });
-                updateAIState("Ready (New Brain)");
+        // MCTS Node Class
+        class MCTSNode {
+            constructor(gameState, move = null, parent = null) {
+                this.gameState = new Chess(gameState.fen());
+                this.move = move;
+                this.parent = parent;
+                this.children = [];
+                this.visits = 0;
+                this.value = 0;
+                this.untriedMoves = gameState.moves({ verbose: true });
+            }
+
+            isFullyExpanded() {
+                return this.untriedMoves.length === 0;
+            }
+
+            bestChild(explorationParam = 1.41) {
+                return this.children.reduce((best, child) => {
+                    const uct = (child.value / child.visits) + 
+                                explorationParam * Math.sqrt(Math.log(this.visits) / child.visits);
+                    const bestUct = (best.value / best.visits) + 
+                                   explorationParam * Math.sqrt(Math.log(this.visits) / best.visits);
+                    return uct > bestUct ? child : best;
+                });
+            }
+
+            expand() {
+                const move = this.untriedMoves.pop();
+                const newGame = new Chess(this.gameState.fen());
+                newGame.move(move);
+                const childNode = new MCTSNode(newGame, move, this);
+                this.children.push(childNode);
+                return childNode;
             }
         }
 
-        // Convert Board to Tensor Input
+        // Enhanced board encoding
         function boardToTensor(fen) {
             const chess = new Chess(fen);
             const board = chess.board();
-            const input = new Float32Array(768); // 64 squares * 12 piece types
+            const input = new Float32Array(832);
             
             const pieceMap = {
                 'p': 0, 'n': 1, 'b': 2, 'r': 3, 'q': 4, 'k': 5,
                 'P': 6, 'N': 7, 'B': 8, 'R': 9, 'Q': 10, 'K': 11
             };
 
-            let idx = 0;
+            // Piece positions
             for (let i = 0; i < 8; i++) {
                 for (let j = 0; j < 8; j++) {
                     const piece = board[i][j];
                     if (piece) {
-                        const pieceIdx = pieceMap[piece.type + (piece.color === 'w' ? '' : '')] || 
-                                       pieceMap[piece.color === 'w' ? piece.type.toUpperCase() : piece.type];
-                        const globalSqIdx = (i * 8 + j) * 12;
-                        input[globalSqIdx + pieceIdx] = 1;
+                        const pieceIdx = pieceMap[piece.color === 'w' ? piece.type.toUpperCase() : piece.type];
+                        input[(i * 8 + j) * 12 + pieceIdx] = 1;
                     }
-                    idx++;
                 }
             }
-            return tf.tensor2d([input], [1, 768]);
+
+            // Mobility features
+            let offset = 768;
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const square = String.fromCharCode('a'.charCodeAt(0) + j) + (8 - i);
+                    const moves = chess.moves({ square, verbose: true });
+                    input[offset++] = Math.min(moves.length / 10.0, 1.0);
+                }
+            }
+
+            return tf.tensor2d([input], [1, 832]);
         }
 
-        // Evaluation Function (Hybrid: Material + NN)
+        // Create enhanced model
+        function createEnhancedModel() {
+            const model = tf.sequential();
+            
+            model.add(tf.layers.dense({ 
+                units: 128, 
+                activation: 'relu', 
+                inputShape: [832]
+            }));
+            model.add(tf.layers.dropout({ rate: 0.2 }));
+            
+            model.add(tf.layers.dense({ 
+                units: 128, 
+                activation: 'relu'
+            }));
+            model.add(tf.layers.dropout({ rate: 0.2 }));
+            
+            model.add(tf.layers.dense({ 
+                units: 64, 
+                activation: 'relu'
+            }));
+            
+            model.add(tf.layers.dense({ units: 1, activation: 'tanh' }));
+            
+            model.compile({ 
+                optimizer: tf.train.adam(0.001), 
+                loss: 'meanSquaredError'
+            });
+            
+            return model;
+        }
+
+        // Save model to Firestore (No CORS!)
+        async function saveModelToFirestore(model, generation) {
+            try {
+                updateAIState("Saving to cloud...");
+                
+                await model.save(tf.io.withSaveHandler(async (artifacts) => {
+                    const weightsBase64 = btoa(String.fromCharCode(...new Uint8Array(artifacts.weightData)));
+                    
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'model', `gen_${generation}`), {
+                        topology: artifacts.modelTopology,
+                        weightSpecs: artifacts.weightSpecs,
+                        weightsBase64: weightsBase64,
+                        generation: generation,
+                        timestamp: Date.now()
+                    });
+                    
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'model', 'current'), {
+                        generation: generation,
+                        timestamp: Date.now()
+                    });
+                    
+                    console.log(`Model gen ${generation} saved`);
+                    return { modelArtifactsInfo: { dateSaved: new Date() } };
+                }));
+                
+                await model.save('localstorage://chess-ai-model');
+                return true;
+            } catch (e) {
+                console.error("Save failed:", e);
+                await model.save('localstorage://chess-ai-model');
+                return false;
+            }
+        }
+
+        async function loadModelFromFirestore() {
+            try {
+                updateAIState("Loading from cloud...");
+                
+                const currentDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'model', 'current'));
+                if (!currentDoc.exists()) return null;
+                
+                modelGeneration = currentDoc.data().generation || 0;
+                
+                const modelDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'model', `gen_${modelGeneration}`));
+                if (!modelDoc.exists()) return null;
+                
+                const modelData = modelDoc.data();
+                const weightsBytes = Uint8Array.from(atob(modelData.weightsBase64), c => c.charCodeAt(0));
+                
+                const model = await tf.loadLayersModel(tf.io.fromMemory({
+                    modelTopology: modelData.topology,
+                    weightSpecs: modelData.weightSpecs,
+                    weightData: weightsBytes.buffer
+                }));
+                
+                console.log(`Loaded gen ${modelGeneration}`);
+                await model.save('localstorage://chess-ai-model');
+                
+                return model;
+            } catch (e) {
+                console.error("Load failed:", e);
+                return null;
+            }
+        }
+
+        // Initialize or Load Model
+        async function initModel() {
+            try {
+                aiModel = await loadModelFromFirestore();
+                
+                if (aiModel) {
+                    updateAIState("Ready (Loaded)");
+                    return;
+                }
+                
+                try {
+                    aiModel = await tf.loadLayersModel('localstorage://chess-ai-model');
+                    console.log("Loaded model from storage");
+                    updateAIState("Ready (Loaded)");
+                    return;
+                } catch (e) {}
+                
+                console.log("Creating new model");
+                aiModel = createEnhancedModel();
+                modelGeneration = 1;
+                await saveModelToFirestore(aiModel, modelGeneration);
+                updateAIState("Ready (New Brain)");
+            } catch (e) {
+                console.error("Model init failed:", e);
+                updateAIState("Ready");
+            }
+        }
+
+        // Evaluation Function
         async function evaluateBoard(fen) {
-            // 1. Material Check (Fast Heuristic)
             const chess = new Chess(fen);
             let material = 0;
             const board = chess.board();
@@ -302,75 +449,76 @@
             
             const heuristic = Math.max(-1, Math.min(1, material / 20));
 
-            // 2. Neural Net Check
             const tensor = boardToTensor(fen);
             const prediction = aiModel.predict(tensor);
             const nnValue = (await prediction.data())[0];
             tensor.dispose();
             prediction.dispose();
 
-            // Combine: Early game relies more on material, later NN learns patterns
-            return (heuristic * 0.7) + (nnValue * 0.3);
+            return (heuristic * 0.5) + (nnValue * 0.5);
         }
 
-        // Minimax with Alpha-Beta Pruning
+        // MCTS Implementation
+        async function runMCTS(rootState, simulations) {
+            const root = new MCTSNode(rootState);
+            
+            for (let i = 0; i < simulations; i++) {
+                let node = root;
+                const simGame = new Chess(rootState.fen());
+                
+                // Selection
+                while (node.isFullyExpanded() && node.children.length > 0) {
+                    node = node.bestChild();
+                    simGame.move(node.move);
+                }
+                
+                // Expansion
+                if (!node.gameState.game_over() && node.untriedMoves.length > 0) {
+                    node = node.expand();
+                    simGame.load(node.gameState.fen());
+                }
+                
+                // Simulation (use NN evaluation)
+                let value = 0;
+                if (simGame.game_over()) {
+                    if (simGame.in_checkmate()) {
+                        value = simGame.turn() === 'w' ? -1 : 1;
+                    }
+                } else {
+                    value = await evaluateBoard(simGame.fen());
+                }
+                
+                // Backpropagation
+                while (node !== null) {
+                    node.visits++;
+                    node.value += value;
+                    node = node.parent;
+                    value = -value;
+                }
+            }
+            
+            if (root.children.length === 0) return null;
+            return root.children.reduce((best, child) => 
+                child.visits > best.visits ? child : best
+            ).move;
+        }
+
+        // Get Best Move (using MCTS)
         async function getBestMove(depth) {
             const moves = game.moves({ verbose: true });
             if (moves.length === 0) return null;
 
-            let bestMove = null;
-            let bestValue = -Infinity;
-            
-            moves.sort(() => Math.random() - 0.5);
-
             updateAIState(`Thinking (Depth ${depth})...`);
 
-            for (const move of moves) {
-                game.move(move);
-                const value = await minimax(depth - 1, -Infinity, Infinity, false);
-                game.undo();
-
-                if (bestMove === null || value < bestValue) {
-                    bestValue = value;
-                    bestMove = move;
-                }
+            const move = await runMCTS(game, MCTS_SIMULATIONS);
+            
+            if (move) {
+                const value = await evaluateBoard(game.fen());
+                const confEl = document.getElementById('ai-confidence');
+                if(confEl) confEl.textContent = value.toFixed(3);
             }
             
-            const confEl = document.getElementById('ai-confidence');
-            if(confEl) confEl.textContent = bestValue.toFixed(3);
-            return bestMove;
-        }
-
-        async function minimax(depth, alpha, beta, isMaximizingPlayer) {
-            if (depth === 0 || game.game_over()) {
-                return await evaluateBoard(game.fen());
-            }
-
-            const moves = game.moves();
-
-            if (isMaximizingPlayer) { // White
-                let maxEval = -Infinity;
-                for (const move of moves) {
-                    game.move(move);
-                    const score = await minimax(depth - 1, alpha, beta, false);
-                    game.undo();
-                    maxEval = Math.max(maxEval, score);
-                    alpha = Math.max(alpha, score);
-                    if (beta <= alpha) break;
-                }
-                return maxEval;
-            } else { // Black (AI)
-                let minEval = Infinity;
-                for (const move of moves) {
-                    game.move(move);
-                    const score = await minimax(depth - 1, alpha, beta, true);
-                    game.undo();
-                    minEval = Math.min(minEval, score);
-                    beta = Math.min(beta, score);
-                    if (beta <= alpha) break;
-                }
-                return minEval;
-            }
+            return move;
         }
 
         // --- Hive Mind Functions ---
@@ -417,13 +565,11 @@
         }
 
         async function trainModel() {
-            // Block re-entry if already training
             if (isTraining) return;
             
             isTraining = true;
             updateAIState("Hive Training Started...");
             
-            // ALWAYS show full overlay for training - never background
             const overlay = document.getElementById('board-overlay');
             const trainingInd = document.getElementById('training-indicator');
             const msg = document.getElementById('overlay-msg');
@@ -435,10 +581,7 @@
             msg.textContent = "Community threshold reached. Upgrading brain...";
             document.getElementById('btn-overlay-new').classList.add('hidden');
 
-            // 1. Fetch Community Data
             const communityGames = await fetchHiveMemories();
-            
-            // 2. Combine Local + Community
             const trainingSet = [...gameHistory, ...communityGames];
             msg.textContent = `Consuming ${trainingSet.length} positions...`;
 
@@ -447,10 +590,9 @@
                 return;
             }
 
-            // Prepare Data
             const inputs = [];
             const labels = [];
-            const MAX_TRAINING_SAMPLES = 500; 
+            const MAX_TRAINING_SAMPLES = 400; 
             const shuffled = trainingSet.sort(() => 0.5 - Math.random()).slice(0, MAX_TRAINING_SAMPLES);
 
             for (const record of shuffled) {
@@ -461,10 +603,9 @@
                 t.dispose();
             }
 
-            const inputTensor = tf.tensor2d(inputs, [inputs.length, 768]);
+            const inputTensor = tf.tensor2d(inputs, [inputs.length, 832]);
             const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
 
-            // Train
             await aiModel.fit(inputTensor, labelTensor, {
                 epochs: 3,
                 batchSize: 32,
@@ -479,7 +620,8 @@
             inputTensor.dispose();
             labelTensor.dispose();
 
-            // Save Model
+            modelGeneration++;
+            await saveModelToFirestore(aiModel, modelGeneration);
             await aiModel.save('localstorage://chess-ai-model');
 
             finishTraining(overlay, trainingInd);
@@ -487,7 +629,7 @@
 
         function finishTraining(overlay, trainingInd) {
             isTraining = false;
-            trainingPending = false; // Clear the flag
+            trainingPending = false;
             updateAIState("Hive Sync Complete");
             
             trainingInd.classList.add('hidden');
@@ -495,7 +637,6 @@
             document.getElementById('overlay-msg').textContent = "I have learned from the community. Ready for next game!";
         }
 
-        // Check if training should be triggered when starting a new game
         function checkAndTriggerTraining() {
             if (trainingPending && !isTraining) {
                 console.log("Triggering deferred training...");
@@ -517,7 +658,6 @@
             'R': 'fa-chess-rook', 'Q': 'fa-chess-queen', 'K': 'fa-chess-king'
         };
 
-        // Get icon style from localStorage or default to 'unicode'
         let iconStyle = localStorage.getItem('chess-icon-style') || 'unicode';
 
         function renderBoard() {
@@ -560,7 +700,6 @@
                         const pieceKey = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
                         
                         if (iconStyle === 'fontawesome') {
-                            // Use Font Awesome icons
                             const iconClass = PIECE_FONTAWESOME[pieceKey] || PIECE_FONTAWESOME[piece.type];
                             pieceSpan.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
                             pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
@@ -572,7 +711,6 @@
                                 pieceSpan.style.textShadow = '0 0 1px #fff';
                             }
                         } else {
-                            // Use Unicode (default)
                             pieceSpan.textContent = PIECE_UNICODE[pieceKey] || PIECE_UNICODE[piece.type];
                             pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
                             if (piece.color === 'w') {
@@ -607,9 +745,8 @@
         }
 
         async function onSquareClick(square) {
-            // Block ALL input during training
             if (isTraining) return;
-            if (game.turn() === 'b' && !game.game_over()) return; // AI Turn block
+            if (game.turn() === 'b' && !game.game_over()) return;
 
             if (selectedSquare === square) {
                 selectedSquare = null;
@@ -718,13 +855,11 @@
             
             gameHistory = [...gameHistory, ...currentGamePositions];
             
-            // Upload AND Increment Global Stat immediately
             uploadToHive(currentGamePositions);
             incrementGlobalStats();
         }
 
         function updateGlobalProgressUI(globalCount) {
-            // Calculate progress within the current batch of 2
             const batchProgress = globalCount % GAMES_PER_TRAINING;
             const percent = Math.min(100, (batchProgress / GAMES_PER_TRAINING) * 100);
             
@@ -758,8 +893,6 @@
             document.getElementById('overlay-title').textContent = "Game Finished";
             
             recordGameData(result);
-            
-            // Check if training was pending and trigger now
             checkAndTriggerTraining();
         }
         
@@ -776,31 +909,23 @@
                         const data = docSnap.data();
                         const currentCount = data.gamesPlayed || 0;
                         
-                        // Update Global Display
                         document.getElementById('global-counter').textContent = currentCount.toLocaleString();
                         updateGlobalProgressUI(currentCount);
                         
-                        // Init logic: if first load, just set last count to current so we don't train immediately
                         if (lastGlobalCount === -1) {
                             lastGlobalCount = currentCount;
                         }
 
-                        // CHECK FOR GLOBAL BATCH COMPLETION
-                        // If we crossed a multiple of 2 since last check
                         const lastBatch = Math.floor(lastGlobalCount / GAMES_PER_TRAINING);
                         const currentBatch = Math.floor(currentCount / GAMES_PER_TRAINING);
 
                         if (currentBatch > lastBatch) {
                             console.log("Global Batch Complete! Training will trigger at game end...");
-                            
-                            // Set flag instead of training immediately
                             trainingPending = true;
                             
-                            // If currently between games (game is over or fresh), trigger now
                             if (game.game_over() || game.history().length === 0) {
                                 checkAndTriggerTraining();
                             }
-                            // Otherwise, it will trigger when the current game ends
                         }
                         
                         lastGlobalCount = currentCount;
@@ -838,7 +963,6 @@
 
         // --- 5. Event Listeners ---
 
-        // Icon style dropdown handler
         const iconStyleSelect = document.getElementById('icon-style');
         iconStyleSelect.value = iconStyle;
         iconStyleSelect.addEventListener('change', (e) => {
@@ -848,10 +972,8 @@
         });
 
         document.getElementById('btn-new-game').addEventListener('click', () => {
-            // Check for pending training before starting new game
             if (trainingPending && !isTraining) {
                 checkAndTriggerTraining();
-                // The training overlay will show, user can start new game after
             } else {
                 game.reset();
                 selectedSquare = null;
