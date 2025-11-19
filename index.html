@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neural Chess - Self Learning AI</title>
+    <title>Neural Chess</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chess.js for game logic -->
@@ -14,7 +14,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
-        /* Custom Chess Piece Styling */
         .chess-piece {
             cursor: pointer;
             user-select: none;
@@ -29,24 +28,12 @@
         .square {
             transition: background-color 0.2s;
         }
-        .last-move {
-            background-color: rgba(255, 255, 0, 0.3) !important;
-        }
-        .highlight {
-            background-color: rgba(0, 255, 0, 0.2) !important;
-        }
-        .capture-hint {
-            background-color: rgba(255, 0, 0, 0.2) !important;
-        }
-        
-        /* Loader */
         .loader {
             border: 3px solid #f3f3f3;
             border-radius: 50%;
             border-top: 3px solid #3b82f6;
             width: 20px;
             height: 20px;
-            -webkit-animation: spin 1s linear infinite; /* Safari */
             animation: spin 1s linear infinite;
         }
         @keyframes spin {
@@ -57,7 +44,6 @@
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex flex-col font-sans">
 
-    <!-- Header -->
     <header class="bg-gray-800 border-b border-gray-700 p-4 shadow-lg">
         <div class="container mx-auto flex justify-between items-center">
             <div class="flex items-center space-x-3">
@@ -75,13 +61,10 @@
         </div>
     </header>
 
-    <!-- Main Content -->
     <main class="flex-grow container mx-auto p-4 flex flex-col lg:flex-row gap-6 items-start justify-center">
         
-        <!-- Left Panel: Game Info & Controls -->
         <div class="w-full lg:w-1/4 space-y-4 order-2 lg:order-1">
             
-            <!-- AI Status Card -->
             <div class="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-lg">
                 <h2 class="text-lg font-semibold mb-3 flex items-center">
                     <i class="fa-solid fa-microchip mr-2 text-purple-400"></i> AI Status
@@ -89,18 +72,25 @@
                 <div class="space-y-3 text-sm">
                     <div class="flex justify-between">
                         <span class="text-gray-400">State</span>
-                        <span id="ai-state" class="text-blue-300 font-medium">Thinking...</span>
+                        <span id="ai-state" class="text-blue-300 font-medium">Initializing...</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-400">Confidence</span>
                         <span id="ai-confidence" class="text-gray-200">0.00</span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-gray-400">Global Batch</span>
+                        <span class="text-gray-400">MCTS Sims</span>
+                        <span id="mcts-sims" class="text-yellow-400">60</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Batch</span>
                         <span id="local-games-count" class="text-gray-200">0 / 2</span>
                     </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Model Gen</span>
+                        <span id="model-generation" class="text-purple-400">0</span>
+                    </div>
                     
-                    <!-- Training Progress Bar -->
                     <div class="mt-2">
                         <div class="flex justify-between text-xs text-gray-500 mb-1">
                             <span>Community Progress</span>
@@ -113,58 +103,44 @@
                 </div>
             </div>
 
-            <!-- Game Controls -->
             <div class="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-lg">
                 <h2 class="text-lg font-semibold mb-3">Controls</h2>
                 <div class="flex flex-col space-y-2">
-                    <div class="mb-2">
-                        <label for="icon-style" class="block text-sm text-gray-400 mb-1">Icon Style</label>
-                        <select id="icon-style" class="w-full py-2 px-3 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="unicode">Unicode</option>
-                            <option value="fontawesome">Font Awesome</option>
-                        </select>
-                    </div>
                     <button id="btn-new-game" class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 rounded-lg transition flex items-center justify-center space-x-2">
                         <i class="fa-solid fa-arrows-rotate"></i>
                         <span>New Game</span>
                     </button>
                     <button id="btn-reset-ai" class="w-full py-2 px-4 bg-red-900/50 hover:bg-red-900/80 text-red-200 border border-red-800 rounded-lg transition flex items-center justify-center space-x-2 text-xs">
                         <i class="fa-solid fa-trash"></i>
-                        <span>Reset AI Brain</span>
+                        <span>Reset Global AI</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Instructions -->
             <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700 text-xs text-gray-400">
-                <p class="mb-2"><strong class="text-gray-300">Hive Mind Active:</strong></p>
-                <p>The AI is connected to a global database. When <span class="text-white font-bold">2 games</span> are played by the community (you + everyone else), this AI will automatically retrain on the new collective knowledge between games.</p>
+                <p class="mb-2"><strong class="text-gray-300">🧠 MCTS + Neural Network:</strong></p>
+                <p>This AI combines <span class="text-yellow-400 font-semibold">Monte Carlo Tree Search</span> with a <span class="text-purple-400 font-semibold">deep neural network</span>. Every <span class="text-white font-bold">2 games</span> globally, the AI evolves!</p>
             </div>
         </div>
 
-        <!-- Center: Chess Board -->
         <div class="w-full lg:w-auto order-1 lg:order-2 flex flex-col items-center">
             
-            <!-- Status Bar -->
             <div id="game-status" class="mb-4 px-4 py-2 bg-gray-800 rounded-full border border-gray-600 text-sm font-medium flex items-center space-x-2">
                 <span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
                 <span>Your Turn (White)</span>
             </div>
 
-            <!-- The Board -->
             <div class="relative p-3 bg-gray-800 rounded-lg shadow-2xl border-4 border-gray-700">
                 <div id="chessboard" class="grid grid-cols-8 grid-rows-8 w-[320px] h-[320px] sm:w-[400px] sm:h-[400px] md:w-[480px] md:h-[480px] bg-[#769656]">
-                    <!-- Squares generated by JS -->
                 </div>
                 
-                <!-- Overlay for Game Over / Training -->
                 <div id="board-overlay" class="hidden absolute inset-0 bg-black/80 z-10 flex flex-col items-center justify-center text-center p-6 backdrop-blur-sm rounded">
                     <h3 id="overlay-title" class="text-2xl font-bold text-white mb-2">Game Over</h3>
                     <p id="overlay-msg" class="text-gray-300 mb-4">White wins!</p>
                     <div id="training-indicator" class="hidden flex flex-col items-center mt-4">
                         <div class="loader mb-2"></div>
                         <span class="text-blue-400 text-sm animate-pulse">Neural Network Training...</span>
-                        <span class="text-xs text-gray-500">Optimizing weights based on recent games</span>
+                        <span class="text-xs text-gray-500">Fast optimization in progress</span>
                     </div>
                     <button id="btn-overlay-new" class="mt-4 px-6 py-2 bg-white text-black font-bold rounded-full hover:bg-gray-200 transition">
                         Play Again
@@ -172,13 +148,11 @@
                 </div>
             </div>
             
-            <!-- Coordinates (Bottom) -->
             <div class="w-full flex justify-between px-2 mt-1 text-gray-500 text-xs font-mono">
                 <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
             </div>
         </div>
 
-        <!-- Right Panel: Move History / Stats -->
         <div class="w-full lg:w-1/4 order-3 h-full">
             <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-lg overflow-hidden flex flex-col h-[500px]">
                 <div class="p-3 bg-gray-750 border-b border-gray-700 font-semibold text-sm">Move History</div>
@@ -190,20 +164,16 @@
 
     </main>
 
-    <!-- Footer -->
     <footer class="bg-gray-800 border-t border-gray-700 p-4 text-center text-sm text-gray-400">
         Brought to you by <a href="https://www.deep-ml.com/problems" target="_blank" class="text-blue-400 hover:text-blue-300 transition font-semibold">Deep-ML</a>
     </footer>
 
-    <!-- Firebase & App Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc, increment, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
-        // --- 1. Configuration & Globals ---
-        
-        // UPDATED CONFIGURATION
         const firebaseConfig = {
             apiKey: "AIzaSyABBWaOz5jtfoethdlpWztnFpIDsb7SRvg",
             authDomain: "neuralzero-chess.firebaseapp.com",
@@ -214,264 +184,368 @@
             measurementId: "G-Y6T07XBS8N"
         };
 
-        // Unique identifier for your app's data in the database
-        const appId = 'neuralzero-chess-v1';
+        const appId = 'neuralzero-chess-mcts-v1';
         
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        const storage = getStorage(app);
 
-        // Game Globals
         let game = new Chess();
-        let board = null;
         let aiModel = null;
         let isTraining = false;
-        let gameHistory = []; // Replay buffer
-        let lastGlobalCount = -1; // Track last training point
+        let gameHistory = [];
+        let lastGlobalCount = -1;
         let selectedSquare = null;
-        let trainingPending = false; // Flag to defer training until game ends
+        let trainingPending = false;
+        let modelGeneration = 0;
         
         const GAMES_PER_TRAINING = 2;
-        const HIVE_SLOTS = 20; // Number of shared memory slots in cloud
-        const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 }; // Simple material values for fallback
+        const HIVE_SLOTS = 20;
+        const MCTS_SIMULATIONS = 60; // Balanced for speed
+        const PIECE_VALUES = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };
         
-        // --- 2. AI / TensorFlow Logic ---
+        // --- MCTS Node Class ---
+        class MCTSNode {
+            constructor(gameState, move = null, parent = null) {
+                this.gameState = new Chess(gameState.fen());
+                this.move = move;
+                this.parent = parent;
+                this.children = [];
+                this.visits = 0;
+                this.value = 0;
+                this.untriedMoves = gameState.moves({ verbose: true });
+            }
 
-        // Initialize or Load Model
-        async function initModel() {
-            try {
-                // Try loading from local storage
-                aiModel = await tf.loadLayersModel('localstorage://chess-ai-model');
-                console.log("Loaded model from storage");
-                updateAIState("Ready (Loaded)");
-            } catch (e) {
-                console.log("Creating new model");
-                // Create a simple dense network
-                aiModel = tf.sequential();
-                aiModel.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [768] }));
-                aiModel.add(tf.layers.dropout({ rate: 0.2 }));
-                aiModel.add(tf.layers.dense({ units: 64, activation: 'relu' }));
-                aiModel.add(tf.layers.dense({ units: 1, activation: 'tanh' })); // Output -1 to 1
-                
-                aiModel.compile({ optimizer: tf.train.adam(0.001), loss: 'meanSquaredError' });
-                updateAIState("Ready (New Brain)");
+            isFullyExpanded() {
+                return this.untriedMoves.length === 0;
+            }
+
+            bestChild(explorationParam = 1.41) {
+                return this.children.reduce((best, child) => {
+                    const uct = (child.value / child.visits) + 
+                                explorationParam * Math.sqrt(Math.log(this.visits) / child.visits);
+                    const bestUct = (best.value / best.visits) + 
+                                   explorationParam * Math.sqrt(Math.log(this.visits) / best.visits);
+                    return uct > bestUct ? child : best;
+                });
+            }
+
+            expand() {
+                const move = this.untriedMoves.pop();
+                const newGame = new Chess(this.gameState.fen());
+                newGame.move(move);
+                const childNode = new MCTSNode(newGame, move, this);
+                this.children.push(childNode);
+                return childNode;
             }
         }
 
-        // Convert Board to Tensor Input
+        // --- Enhanced Board Encoding (Compact) ---
         function boardToTensor(fen) {
             const chess = new Chess(fen);
             const board = chess.board();
-            const input = new Float32Array(768); // 64 squares * 12 piece types
+            const input = new Float32Array(832); // Compact representation
             
             const pieceMap = {
                 'p': 0, 'n': 1, 'b': 2, 'r': 3, 'q': 4, 'k': 5,
                 'P': 6, 'N': 7, 'B': 8, 'R': 9, 'Q': 10, 'K': 11
             };
 
-            let idx = 0;
+            // Piece positions
             for (let i = 0; i < 8; i++) {
                 for (let j = 0; j < 8; j++) {
                     const piece = board[i][j];
                     if (piece) {
-                        const pieceIdx = pieceMap[piece.type + (piece.color === 'w' ? '' : '')] || 
-                                       pieceMap[piece.color === 'w' ? piece.type.toUpperCase() : piece.type];
-                        const globalSqIdx = (i * 8 + j) * 12;
-                        input[globalSqIdx + pieceIdx] = 1;
+                        const pieceChar = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
+                        const pieceIdx = pieceMap[pieceChar];
+                        input[(i * 8 + j) * 12 + pieceIdx] = 1;
                     }
-                    idx++;
                 }
             }
-            return tf.tensor2d([input], [1, 768]);
+
+            // Add mobility (simplified)
+            let offset = 768;
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const square = String.fromCharCode('a'.charCodeAt(0) + j) + (8 - i);
+                    const moves = chess.moves({ square, verbose: true });
+                    input[offset++] = Math.min(moves.length / 10.0, 1.0);
+                }
+            }
+
+            return tf.tensor2d([input], [1, 832]);
         }
 
-        // Evaluation Function (Hybrid: Material + NN)
-        async function evaluateBoard(fen) {
-            // 1. Material Check (Fast Heuristic)
+        // --- Compact Neural Network (Fast) ---
+        function createModel() {
+            const model = tf.sequential();
+            
+            model.add(tf.layers.dense({ 
+                units: 128, 
+                activation: 'relu', 
+                inputShape: [832]
+            }));
+            model.add(tf.layers.dropout({ rate: 0.2 }));
+            
+            model.add(tf.layers.dense({ 
+                units: 128, 
+                activation: 'relu'
+            }));
+            model.add(tf.layers.dropout({ rate: 0.2 }));
+            
+            model.add(tf.layers.dense({ 
+                units: 64, 
+                activation: 'relu'
+            }));
+            
+            model.add(tf.layers.dense({ units: 1, activation: 'tanh' }));
+            
+            model.compile({ 
+                optimizer: tf.train.adam(0.001), 
+                loss: 'meanSquaredError'
+            });
+            
+            return model;
+        }
+
+        // --- Firebase Model Persistence ---
+        async function saveModelToFirebase(model, generation) {
+            try {
+                updateAIState("Saving to cloud...");
+                
+                await model.save('indexeddb://temp-model');
+                
+                await model.save(tf.io.withSaveHandler(async (artifacts) => {
+                    const modelJsonBlob = new Blob([JSON.stringify(artifacts.modelTopology)], { type: 'application/json' });
+                    const weightsBlob = new Blob([artifacts.weightData], { type: 'application/octet-stream' });
+                    
+                    await uploadBytes(ref(storage, `models/${appId}/gen_${generation}/model.json`), modelJsonBlob);
+                    await uploadBytes(ref(storage, `models/${appId}/gen_${generation}/weights.bin`), weightsBlob);
+                    
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'model_meta', 'current'), {
+                        generation,
+                        timestamp: Date.now(),
+                        weightSpecs: artifacts.weightSpecs
+                    });
+                    
+                    return { modelArtifactsInfo: { dateSaved: new Date() } };
+                }));
+                
+                await model.save('localstorage://chess-mcts-model');
+                return true;
+            } catch (e) {
+                console.error("Save failed:", e);
+                await model.save('localstorage://chess-mcts-model');
+                return false;
+            }
+        }
+
+        async function loadModelFromFirebase() {
+            try {
+                updateAIState("Loading from cloud...");
+                
+                const metaSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'model_meta', 'current'));
+                if (!metaSnap.exists()) return null;
+                
+                const meta = metaSnap.data();
+                modelGeneration = meta.generation || 0;
+                
+                const modelUrl = await getDownloadURL(ref(storage, `models/${appId}/gen_${modelGeneration}/model.json`));
+                const weightsUrl = await getDownloadURL(ref(storage, `models/${appId}/gen_${modelGeneration}/weights.bin`));
+                
+                const model = await tf.loadLayersModel(tf.io.http(modelUrl, {
+                    weightUrlConverter: () => weightsUrl
+                }));
+                
+                document.getElementById('model-generation').textContent = modelGeneration;
+                await model.save('localstorage://chess-mcts-model');
+                
+                return model;
+            } catch (e) {
+                console.error("Load failed:", e);
+                return null;
+            }
+        }
+
+        async function initModel() {
+            try {
+                aiModel = await loadModelFromFirebase();
+                if (aiModel) {
+                    updateAIState(`Ready (Gen ${modelGeneration})`);
+                    return;
+                }
+                
+                try {
+                    aiModel = await tf.loadLayersModel('localstorage://chess-mcts-model');
+                    updateAIState("Ready (Cached)");
+                    return;
+                } catch (e) {}
+                
+                aiModel = createModel();
+                modelGeneration = 1;
+                await saveModelToFirebase(aiModel, modelGeneration);
+                document.getElementById('model-generation').textContent = modelGeneration;
+                updateAIState("Ready (New)");
+            } catch (e) {
+                console.error("Init failed:", e);
+            }
+        }
+
+        // --- Fast Evaluation ---
+        async function evaluatePosition(fen) {
             const chess = new Chess(fen);
             let material = 0;
+            
             const board = chess.board();
             for(let row of board) {
                 for(let p of row) {
                     if(p) {
-                        const val = PIECE_VALUES[p.type] || 0;
-                        material += (p.color === 'w' ? val : -val);
+                        material += (p.color === 'w' ? 1 : -1) * (PIECE_VALUES[p.type] || 0);
                     }
                 }
             }
             
             const heuristic = Math.max(-1, Math.min(1, material / 20));
-
-            // 2. Neural Net Check
+            
             const tensor = boardToTensor(fen);
             const prediction = aiModel.predict(tensor);
             const nnValue = (await prediction.data())[0];
             tensor.dispose();
             prediction.dispose();
-
-            // Combine: Early game relies more on material, later NN learns patterns
-            return (heuristic * 0.7) + (nnValue * 0.3);
-        }
-
-        // Minimax with Alpha-Beta Pruning
-        async function getBestMove(depth) {
-            const moves = game.moves({ verbose: true });
-            if (moves.length === 0) return null;
-
-            let bestMove = null;
-            let bestValue = -Infinity;
             
-            moves.sort(() => Math.random() - 0.5);
+            return heuristic * 0.5 + nnValue * 0.5;
+        }
 
-            updateAIState(`Thinking (Depth ${depth})...`);
-
-            for (const move of moves) {
-                game.move(move);
-                const value = await minimax(depth - 1, -Infinity, Infinity, false);
-                game.undo();
-
-                if (bestMove === null || value < bestValue) {
-                    bestValue = value;
-                    bestMove = move;
+        // --- MCTS Implementation ---
+        async function runMCTS(rootState, simulations) {
+            const root = new MCTSNode(rootState);
+            
+            for (let i = 0; i < simulations; i++) {
+                let node = root;
+                const simGame = new Chess(rootState.fen());
+                
+                // Selection
+                while (node.isFullyExpanded() && node.children.length > 0) {
+                    node = node.bestChild();
+                    simGame.move(node.move);
+                }
+                
+                // Expansion
+                if (!node.gameState.game_over() && node.untriedMoves.length > 0) {
+                    node = node.expand();
+                    simGame.load(node.gameState.fen());
+                }
+                
+                // Simulation (use NN evaluation instead of rollout for speed)
+                let value = 0;
+                if (simGame.game_over()) {
+                    if (simGame.in_checkmate()) {
+                        value = simGame.turn() === 'w' ? -1 : 1;
+                    } else {
+                        value = 0;
+                    }
+                } else {
+                    value = await evaluatePosition(simGame.fen());
+                }
+                
+                // Backpropagation
+                while (node !== null) {
+                    node.visits++;
+                    node.value += value;
+                    node = node.parent;
+                    value = -value; // Flip for opponent
                 }
             }
             
-            const confEl = document.getElementById('ai-confidence');
-            if(confEl) confEl.textContent = bestValue.toFixed(3);
-            return bestMove;
+            // Return best move
+            if (root.children.length === 0) return null;
+            return root.children.reduce((best, child) => 
+                child.visits > best.visits ? child : best
+            ).move;
         }
 
-        async function minimax(depth, alpha, beta, isMaximizingPlayer) {
-            if (depth === 0 || game.game_over()) {
-                return await evaluateBoard(game.fen());
+        // --- AI Move Selection ---
+        async function getBestMove() {
+            updateAIState("MCTS Running...");
+            
+            const move = await runMCTS(game, MCTS_SIMULATIONS);
+            
+            if (move) {
+                // Calculate confidence based on simulation
+                const value = await evaluatePosition(game.fen());
+                document.getElementById('ai-confidence').textContent = value.toFixed(3);
             }
-
-            const moves = game.moves();
-
-            if (isMaximizingPlayer) { // White
-                let maxEval = -Infinity;
-                for (const move of moves) {
-                    game.move(move);
-                    const score = await minimax(depth - 1, alpha, beta, false);
-                    game.undo();
-                    maxEval = Math.max(maxEval, score);
-                    alpha = Math.max(alpha, score);
-                    if (beta <= alpha) break;
-                }
-                return maxEval;
-            } else { // Black (AI)
-                let minEval = Infinity;
-                for (const move of moves) {
-                    game.move(move);
-                    const score = await minimax(depth - 1, alpha, beta, true);
-                    game.undo();
-                    minEval = Math.min(minEval, score);
-                    beta = Math.min(beta, score);
-                    if (beta <= alpha) break;
-                }
-                return minEval;
-            }
+            
+            return move;
         }
 
-        // --- Hive Mind Functions ---
-
+        // --- Hive Mind ---
         async function uploadToHive(gameDataArray) {
             try {
                 if (!auth.currentUser) return;
                 const slotId = `slot_${Math.floor(Math.random() * HIVE_SLOTS)}`;
-                const slotRef = doc(db, 'artifacts', appId, 'public', 'data', 'hive_memory', slotId);
-                
-                await setDoc(slotRef, {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'hive', slotId), {
                     games: gameDataArray,
-                    timestamp: Date.now(),
-                    contributor: auth.currentUser.uid
+                    timestamp: Date.now()
                 });
-                console.log("Contributed to Hive Mind:", slotId);
             } catch (e) {
-                console.error("Hive upload failed:", e);
+                console.error("Upload failed:", e);
             }
         }
 
         async function fetchHiveMemories() {
             try {
-                if (!auth.currentUser) return [];
-                updateAIState("Syncing with Hive Mind...");
-                
-                const hiveRef = collection(db, 'artifacts', appId, 'public', 'data', 'hive_memory');
-                const snapshot = await getDocs(hiveRef);
-                
-                let collectiveMemories = [];
+                const snapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'hive'));
+                let memories = [];
                 snapshot.forEach(doc => {
                     const data = doc.data();
-                    if (data.games && Array.isArray(data.games)) {
-                        collectiveMemories = [...collectiveMemories, ...data.games];
-                    }
+                    if (data.games) memories = [...memories, ...data.games];
                 });
-                
-                console.log(`Downloaded ${collectiveMemories.length} positions from Hive.`);
-                return collectiveMemories;
+                return memories;
             } catch (e) {
-                console.error("Hive sync failed:", e);
                 return [];
             }
         }
 
         async function trainModel() {
-            // Block re-entry if already training
             if (isTraining) return;
-            
             isTraining = true;
-            updateAIState("Hive Training Started...");
             
-            // ALWAYS show full overlay for training - never background
             const overlay = document.getElementById('board-overlay');
             const trainingInd = document.getElementById('training-indicator');
             const msg = document.getElementById('overlay-msg');
-            const title = document.getElementById('overlay-title');
             
             overlay.classList.remove('hidden');
             trainingInd.classList.remove('hidden');
-            title.textContent = "Hive Learning Phase";
-            msg.textContent = "Community threshold reached. Upgrading brain...";
+            document.getElementById('overlay-title').textContent = "Training Phase";
+            msg.textContent = "Fast training in progress...";
             document.getElementById('btn-overlay-new').classList.add('hidden');
 
-            // 1. Fetch Community Data
             const communityGames = await fetchHiveMemories();
-            
-            // 2. Combine Local + Community
-            const trainingSet = [...gameHistory, ...communityGames];
-            msg.textContent = `Consuming ${trainingSet.length} positions...`;
+            const trainingSet = [...gameHistory, ...communityGames].sort(() => 0.5 - Math.random()).slice(0, 400);
 
-            if (trainingSet.length === 0) {
-                finishTraining(overlay, trainingInd);
-                return;
-            }
-
-            // Prepare Data
             const inputs = [];
             const labels = [];
-            const MAX_TRAINING_SAMPLES = 500; 
-            const shuffled = trainingSet.sort(() => 0.5 - Math.random()).slice(0, MAX_TRAINING_SAMPLES);
 
-            for (const record of shuffled) {
+            for (const record of trainingSet) {
                 const t = boardToTensor(record.fen);
-                const d = await t.data();
-                inputs.push(d); 
+                inputs.push(await t.data());
                 labels.push(record.result);
                 t.dispose();
             }
 
-            const inputTensor = tf.tensor2d(inputs, [inputs.length, 768]);
+            const inputTensor = tf.tensor2d(inputs, [inputs.length, 832]);
             const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
 
-            // Train
+            // Fast training - only 3 epochs
             await aiModel.fit(inputTensor, labelTensor, {
                 epochs: 3,
                 batchSize: 32,
                 shuffle: true,
                 callbacks: {
                     onEpochEnd: (epoch, logs) => {
-                        console.log(`Epoch ${epoch}: loss=${logs.loss}`);
+                        msg.textContent = `Epoch ${epoch + 1}/3 - Loss: ${logs.loss.toFixed(4)}`;
                     }
                 }
             });
@@ -479,55 +553,34 @@
             inputTensor.dispose();
             labelTensor.dispose();
 
-            // Save Model
-            await aiModel.save('localstorage://chess-ai-model');
+            modelGeneration++;
+            await saveModelToFirebase(aiModel, modelGeneration);
+            document.getElementById('model-generation').textContent = modelGeneration;
 
-            finishTraining(overlay, trainingInd);
-        }
-
-        function finishTraining(overlay, trainingInd) {
             isTraining = false;
-            trainingPending = false; // Clear the flag
-            updateAIState("Hive Sync Complete");
-            
+            trainingPending = false;
+            updateAIState(`Ready (Gen ${modelGeneration})`);
             trainingInd.classList.add('hidden');
             document.getElementById('btn-overlay-new').classList.remove('hidden');
-            document.getElementById('overlay-msg').textContent = "I have learned from the community. Ready for next game!";
+            msg.textContent = `Generation ${modelGeneration} ready!`;
         }
 
-        // Check if training should be triggered when starting a new game
         function checkAndTriggerTraining() {
-            if (trainingPending && !isTraining) {
-                console.log("Triggering deferred training...");
-                trainModel();
-            }
+            if (trainingPending && !isTraining) trainModel();
         }
 
-        // --- 3. Board Logic & UI ---
-
+        // --- Board UI ---
         const PIECE_UNICODE = {
             'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚',
             'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔'
         };
-
-        const PIECE_FONTAWESOME = {
-            'p': 'fa-chess-pawn', 'n': 'fa-chess-knight', 'b': 'fa-chess-bishop', 
-            'r': 'fa-chess-rook', 'q': 'fa-chess-queen', 'k': 'fa-chess-king',
-            'P': 'fa-chess-pawn', 'N': 'fa-chess-knight', 'B': 'fa-chess-bishop', 
-            'R': 'fa-chess-rook', 'Q': 'fa-chess-queen', 'K': 'fa-chess-king'
-        };
-
-        // Get icon style from localStorage or default to 'unicode'
-        let iconStyle = localStorage.getItem('chess-icon-style') || 'unicode';
 
         function renderBoard() {
             const boardEl = document.getElementById('chessboard');
             boardEl.innerHTML = '';
             const boardState = game.board();
             
-            if (game.game_over()) {
-                handleGameOver();
-            }
+            if (game.game_over()) handleGameOver();
 
             let isWhiteSq = true;
             for (let i = 0; i < 8; i++) {
@@ -535,8 +588,7 @@
                     const squareCode = String.fromCharCode('a'.charCodeAt(0) + j) + (8 - i);
                     const squareDiv = document.createElement('div');
                     
-                    let baseClass = "w-full h-full flex items-center justify-center text-4xl sm:text-5xl select-none square relative";
-                    let colorClass = isWhiteSq ? "bg-[#ebecd0] text-black" : "bg-[#779556] text-black";
+                    let colorClass = isWhiteSq ? "bg-[#ebecd0]" : "bg-[#779556]";
                     
                     const history = game.history({ verbose: true });
                     if (history.length > 0) {
@@ -546,54 +598,28 @@
                         }
                     }
 
-                    if (selectedSquare === squareCode) {
-                        colorClass = "bg-[#bbc456]";
-                    }
+                    if (selectedSquare === squareCode) colorClass = "bg-[#bbc456]";
 
-                    squareDiv.className = `${baseClass} ${colorClass}`;
-                    squareDiv.dataset.square = squareCode;
+                    squareDiv.className = `w-full h-full flex items-center justify-center text-4xl sm:text-5xl select-none square ${colorClass}`;
                     squareDiv.onclick = () => onSquareClick(squareCode);
 
                     const piece = boardState[i][j];
                     if (piece) {
                         const pieceSpan = document.createElement('span');
-                        const pieceKey = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
-                        
-                        if (iconStyle === 'fontawesome') {
-                            // Use Font Awesome icons
-                            const iconClass = PIECE_FONTAWESOME[pieceKey] || PIECE_FONTAWESOME[piece.type];
-                            pieceSpan.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
-                            pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
-                            if (piece.color === 'w') {
-                                pieceSpan.style.color = '#fff';
-                                pieceSpan.style.textShadow = '0 0 2px #000';
-                            } else {
-                                pieceSpan.style.color = '#000';
-                                pieceSpan.style.textShadow = '0 0 1px #fff';
-                            }
-                        } else {
-                            // Use Unicode (default)
-                            pieceSpan.textContent = PIECE_UNICODE[pieceKey] || PIECE_UNICODE[piece.type];
-                            pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
-                            if (piece.color === 'w') {
-                                pieceSpan.style.color = '#fff';
-                                pieceSpan.style.textShadow = '0 0 2px #000';
-                            } else {
-                                pieceSpan.style.color = '#000';
-                                pieceSpan.style.textShadow = '0 0 1px #fff';
-                            }
-                        }
+                        const pieceChar = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
+                        pieceSpan.textContent = PIECE_UNICODE[pieceChar];
+                        pieceSpan.className = 'chess-piece';
+                        pieceSpan.style.color = piece.color === 'w' ? '#fff' : '#000';
+                        pieceSpan.style.textShadow = piece.color === 'w' ? '0 0 2px #000' : '0 0 1px #fff';
                         squareDiv.appendChild(pieceSpan);
                     }
                     
                     if (selectedSquare) {
                         const moves = game.moves({ square: selectedSquare, verbose: true });
-                        const isMove = moves.find(m => m.to === squareCode);
-                        if (isMove) {
+                        if (moves.find(m => m.to === squareCode)) {
                             const hint = document.createElement('div');
-                            hint.className = isMove.captured 
-                                ? "absolute inset-0 border-4 border-red-400/50 rounded-full scale-90" 
-                                : "absolute w-3 h-3 bg-black/20 rounded-full";
+                            hint.className = "absolute w-3 h-3 bg-black/20 rounded-full";
+                            squareDiv.style.position = 'relative';
                             squareDiv.appendChild(hint);
                         }
                     }
@@ -603,13 +629,10 @@
                 }
                 isWhiteSq = !isWhiteSq;
             }
-            updateStatus();
         }
 
         async function onSquareClick(square) {
-            // Block ALL input during training
-            if (isTraining) return;
-            if (game.turn() === 'b' && !game.game_over()) return; // AI Turn block
+            if (isTraining || game.turn() === 'b') return;
 
             if (selectedSquare === square) {
                 selectedSquare = null;
@@ -618,31 +641,19 @@
             }
 
             if (selectedSquare) {
-                const move = game.move({
-                    from: selectedSquare,
-                    to: square,
-                    promotion: 'q'
-                });
-
+                const move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
                 if (move) {
                     selectedSquare = null;
                     renderBoard();
-                    if (!game.game_over()) {
-                        setTimeout(makeAIMove, 200);
-                    }
+                    if (!game.game_over()) setTimeout(makeAIMove, 300);
                 } else {
                     const piece = game.get(square);
-                    if (piece && piece.color === game.turn()) {
-                        selectedSquare = square;
-                        renderBoard();
-                    } else {
-                        selectedSquare = null;
-                        renderBoard();
-                    }
+                    selectedSquare = (piece && piece.color === 'w') ? square : null;
+                    renderBoard();
                 }
             } else {
                 const piece = game.get(square);
-                if (piece && piece.color === game.turn()) {
+                if (piece && piece.color === 'w') {
                     selectedSquare = square;
                     renderBoard();
                 }
@@ -652,30 +663,13 @@
         async function makeAIMove() {
             if (game.game_over()) return;
             
-            updateAIState("Thinking...");
-            updateStatus("AI is thinking...");
+            updateAIState("MCTS Thinking...");
             
-            setTimeout(async () => {
-                const move = await getBestMove(2);
-                if (move) {
-                    game.move(move);
-                    renderBoard();
-                    updateAIState("Waiting for opponent");
-                }
-            }, 10);
-        }
-
-        function updateStatus(msg) {
-            const statusEl = document.getElementById('game-status');
-            if (msg) {
-                statusEl.innerHTML = `<span class="w-3 h-3 rounded-full bg-yellow-500 animate-pulse"></span><span>${msg}</span>`;
-                return;
-            }
-            
-            if (game.turn() === 'w') {
-                statusEl.innerHTML = `<span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span><span>Your Turn (White)</span>`;
-            } else {
-                statusEl.innerHTML = `<span class="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span><span>AI Turn (Black)</span>`;
+            const move = await getBestMove();
+            if (move) {
+                game.move(move);
+                renderBoard();
+                updateAIState(`Ready (Gen ${modelGeneration})`);
             }
         }
 
@@ -683,204 +677,116 @@
             document.getElementById('ai-state').textContent = text;
         }
 
-        function addToHistory(moveStr) {
-            const hist = document.getElementById('move-history');
-            const div = document.createElement('div');
-            const moveNum = Math.ceil(game.history().length / 2);
-            const isWhite = game.history().length % 2 !== 0;
-            
-            if (isWhite) {
-                div.className = "flex border-b border-gray-700 py-1";
-                div.innerHTML = `<span class="text-gray-500 w-8">${moveNum}.</span><span class="text-white w-1/2">${moveStr}</span>`;
-                hist.appendChild(div);
-            } else {
-                const last = hist.lastElementChild;
-                if (last) {
-                    last.innerHTML += `<span class="text-gray-300 w-1/2 text-right">${moveStr}</span>`;
-                }
-            }
-            hist.scrollTop = hist.scrollHeight;
-        }
-
         function recordGameData(result) {
             const tempGame = new Chess();
             const history = game.history();
-            
-            let currentGamePositions = [];
+            let positions = [];
 
             history.forEach(move => {
-                const fen = tempGame.fen();
-                currentGamePositions.push({ fen: fen, result: result });
+                positions.push({ fen: tempGame.fen(), result });
                 tempGame.move(move);
             });
             
-            currentGamePositions.push({ fen: tempGame.fen(), result: result });
-            
-            gameHistory = [...gameHistory, ...currentGamePositions];
-            
-            // Upload AND Increment Global Stat immediately
-            uploadToHive(currentGamePositions);
+            gameHistory = [...gameHistory, ...positions];
+            uploadToHive(positions);
             incrementGlobalStats();
         }
 
-        function updateGlobalProgressUI(globalCount) {
-            // Calculate progress within the current batch of 2
-            const batchProgress = globalCount % GAMES_PER_TRAINING;
-            const percent = Math.min(100, (batchProgress / GAMES_PER_TRAINING) * 100);
-            
-            document.getElementById('local-games-count').textContent = `${batchProgress} / ${GAMES_PER_TRAINING}`;
-            document.getElementById('training-progress').style.width = `${percent}%`;
-            document.getElementById('buffer-percent').textContent = `${Math.floor(percent)}%`;
-        }
-
         async function handleGameOver() {
-            let msg = "";
-            let result = 0; 
+            let msg = "", result = 0;
 
             if (game.in_checkmate()) {
-                if (game.turn() === 'w') {
-                    msg = "Checkmate! AI (Black) Wins!";
-                    result = -1;
-                } else {
-                    msg = "Checkmate! You (White) Win!";
-                    result = 1;
-                }
+                msg = game.turn() === 'w' ? "AI Wins!" : "You Win!";
+                result = game.turn() === 'w' ? -1 : 1;
             } else if (game.in_draw()) {
                 msg = "Draw!";
-                result = 0;
-            } else {
-                msg = "Game Over";
             }
 
             document.getElementById('overlay-msg').textContent = msg;
             document.getElementById('board-overlay').classList.remove('hidden');
-            document.getElementById('training-indicator').classList.add('hidden');
             document.getElementById('overlay-title').textContent = "Game Finished";
             
             recordGameData(result);
-            
-            // Check if training was pending and trigger now
             checkAndTriggerTraining();
         }
-        
-        // --- 4. Firebase Integration ---
+
+        async function incrementGlobalStats() {
+            try {
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'global'), {
+                    gamesPlayed: increment(1)
+                });
+            } catch(e) {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'global'), { gamesPlayed: 1 });
+            }
+        }
 
         async function initApp() {
             try {
                 await signInAnonymously(auth);
                 
-                const statsRef = doc(db, 'artifacts', appId, 'public', 'data', 'chess_stats', 'global');
-                
-                onSnapshot(statsRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        const currentCount = data.gamesPlayed || 0;
+                onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'global'), (snap) => {
+                    if (snap.exists()) {
+                        const count = snap.data().gamesPlayed || 0;
+                        document.getElementById('global-counter').textContent = count;
                         
-                        // Update Global Display
-                        document.getElementById('global-counter').textContent = currentCount.toLocaleString();
-                        updateGlobalProgressUI(currentCount);
+                        const progress = (count % GAMES_PER_TRAINING) / GAMES_PER_TRAINING * 100;
+                        document.getElementById('training-progress').style.width = `${progress}%`;
+                        document.getElementById('local-games-count').textContent = `${count % GAMES_PER_TRAINING} / ${GAMES_PER_TRAINING}`;
                         
-                        // Init logic: if first load, just set last count to current so we don't train immediately
-                        if (lastGlobalCount === -1) {
-                            lastGlobalCount = currentCount;
-                        }
-
-                        // CHECK FOR GLOBAL BATCH COMPLETION
-                        // If we crossed a multiple of 2 since last check
-                        const lastBatch = Math.floor(lastGlobalCount / GAMES_PER_TRAINING);
-                        const currentBatch = Math.floor(currentCount / GAMES_PER_TRAINING);
-
-                        if (currentBatch > lastBatch) {
-                            console.log("Global Batch Complete! Training will trigger at game end...");
-                            
-                            // Set flag instead of training immediately
-                            trainingPending = true;
-                            
-                            // If currently between games (game is over or fresh), trigger now
-                            if (game.game_over() || game.history().length === 0) {
-                                checkAndTriggerTraining();
+                        if (lastGlobalCount !== -1) {
+                            if (Math.floor(count / GAMES_PER_TRAINING) > Math.floor(lastGlobalCount / GAMES_PER_TRAINING)) {
+                                trainingPending = true;
+                                if (game.game_over() || game.history().length === 0) {
+                                    checkAndTriggerTraining();
+                                }
                             }
-                            // Otherwise, it will trigger when the current game ends
                         }
-                        
-                        lastGlobalCount = currentCount;
-
-                    } else {
-                         setDoc(statsRef, { gamesPlayed: 0 }, { merge: true });
-                         document.getElementById('global-counter').textContent = "0";
+                        lastGlobalCount = count;
                     }
-                }, (error) => {
-                    console.error("Stats listener error:", error);
-                    document.getElementById('global-counter').textContent = "Offline";
                 });
-
+                
                 await initModel();
                 renderBoard();
             } catch (e) {
-                console.error("Auth/Init failed:", e);
-                document.getElementById('global-counter').textContent = "Offline Mode";
-                await initModel(); 
-                renderBoard();
+                console.error("Init failed:", e);
             }
         }
 
-        async function incrementGlobalStats() {
-             try {
-                if (!auth.currentUser) return;
-                const statsRef = doc(db, 'artifacts', appId, 'public', 'data', 'chess_stats', 'global');
-                await updateDoc(statsRef, {
-                    gamesPlayed: increment(1)
-                });
-             } catch(e) {
-                 console.log("Could not update global stats", e);
-             }
-        }
-
-        // --- 5. Event Listeners ---
-
-        // Icon style dropdown handler
-        const iconStyleSelect = document.getElementById('icon-style');
-        iconStyleSelect.value = iconStyle;
-        iconStyleSelect.addEventListener('change', (e) => {
-            iconStyle = e.target.value;
-            localStorage.setItem('chess-icon-style', iconStyle);
-            renderBoard();
-        });
-
-        document.getElementById('btn-new-game').addEventListener('click', () => {
-            // Check for pending training before starting new game
+        document.getElementById('btn-new-game').onclick = () => {
             if (trainingPending && !isTraining) {
                 checkAndTriggerTraining();
-                // The training overlay will show, user can start new game after
             } else {
                 game.reset();
                 selectedSquare = null;
                 renderBoard();
-                document.getElementById('move-history').innerHTML = '';
+                document.getElementById('move-history').innerHTML = '<div class="text-gray-500 text-center italic mt-4">Game started</div>';
                 document.getElementById('board-overlay').classList.add('hidden');
-                updateAIState("Ready");
             }
-        });
+        };
 
-        document.getElementById('btn-overlay-new').addEventListener('click', () => {
+        document.getElementById('btn-overlay-new').onclick = () => {
             game.reset();
             selectedSquare = null;
             renderBoard();
             document.getElementById('move-history').innerHTML = '';
             document.getElementById('board-overlay').classList.add('hidden');
-            updateAIState("Ready");
-        });
+        };
 
-        document.getElementById('btn-reset-ai').addEventListener('click', async () => {
-            if(confirm("This will wipe the AI's memory and reset its brain. Are you sure?")) {
-                localStorage.removeItem('localstorage://chess-ai-model');
+        document.getElementById('btn-reset-ai').onclick = async () => {
+            if(confirm("Reset global AI for everyone?")) {
+                const snapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'hive'));
+                snapshot.forEach(async (d) => await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'hive', d.id), {}));
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'global'), { gamesPlayed: 0 });
+                
+                aiModel = createModel();
+                modelGeneration = 1;
+                await saveModelToFirebase(aiModel, modelGeneration);
+                alert("Reset complete!");
                 location.reload();
             }
-        });
+        };
 
         initApp();
-        
-
     </script>
 </body>
 </html>
