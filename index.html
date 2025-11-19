@@ -117,6 +117,13 @@
             <div class="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-lg">
                 <h2 class="text-lg font-semibold mb-3">Controls</h2>
                 <div class="flex flex-col space-y-2">
+                    <div class="mb-2">
+                        <label for="icon-style" class="block text-sm text-gray-400 mb-1">Icon Style</label>
+                        <select id="icon-style" class="w-full py-2 px-3 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="unicode">Unicode</option>
+                            <option value="fontawesome">Font Awesome</option>
+                        </select>
+                    </div>
                     <button id="btn-new-game" class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 rounded-lg transition flex items-center justify-center space-x-2">
                         <i class="fa-solid fa-arrows-rotate"></i>
                         <span>New Game</span>
@@ -503,6 +510,16 @@
             'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔'
         };
 
+        const PIECE_FONTAWESOME = {
+            'p': 'fa-chess-pawn', 'n': 'fa-chess-knight', 'b': 'fa-chess-bishop', 
+            'r': 'fa-chess-rook', 'q': 'fa-chess-queen', 'k': 'fa-chess-king',
+            'P': 'fa-chess-pawn', 'N': 'fa-chess-knight', 'B': 'fa-chess-bishop', 
+            'R': 'fa-chess-rook', 'Q': 'fa-chess-queen', 'K': 'fa-chess-king'
+        };
+
+        // Get icon style from localStorage or default to 'unicode'
+        let iconStyle = localStorage.getItem('chess-icon-style') || 'unicode';
+
         function renderBoard() {
             const boardEl = document.getElementById('chessboard');
             boardEl.innerHTML = '';
@@ -540,14 +557,31 @@
                     const piece = boardState[i][j];
                     if (piece) {
                         const pieceSpan = document.createElement('span');
-                        pieceSpan.textContent = PIECE_UNICODE[piece.type + (piece.color === 'w' ? 'P' : '')] || PIECE_UNICODE[piece.color === 'w' ? piece.type.toUpperCase() : piece.type];
-                        pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
-                        if (piece.color === 'w') {
-                            pieceSpan.style.color = '#fff';
-                            pieceSpan.style.textShadow = '0 0 2px #000';
+                        const pieceKey = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
+                        
+                        if (iconStyle === 'fontawesome') {
+                            // Use Font Awesome icons
+                            const iconClass = PIECE_FONTAWESOME[pieceKey] || PIECE_FONTAWESOME[piece.type];
+                            pieceSpan.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
+                            pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
+                            if (piece.color === 'w') {
+                                pieceSpan.style.color = '#fff';
+                                pieceSpan.style.textShadow = '0 0 2px #000';
+                            } else {
+                                pieceSpan.style.color = '#000';
+                                pieceSpan.style.textShadow = '0 0 1px #fff';
+                            }
                         } else {
-                            pieceSpan.style.color = '#000';
-                            pieceSpan.style.textShadow = '0 0 1px #fff';
+                            // Use Unicode (default)
+                            pieceSpan.textContent = PIECE_UNICODE[pieceKey] || PIECE_UNICODE[piece.type];
+                            pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
+                            if (piece.color === 'w') {
+                                pieceSpan.style.color = '#fff';
+                                pieceSpan.style.textShadow = '0 0 2px #000';
+                            } else {
+                                pieceSpan.style.color = '#000';
+                                pieceSpan.style.textShadow = '0 0 1px #fff';
+                            }
                         }
                         squareDiv.appendChild(pieceSpan);
                     }
@@ -803,6 +837,15 @@
         }
 
         // --- 5. Event Listeners ---
+
+        // Icon style dropdown handler
+        const iconStyleSelect = document.getElementById('icon-style');
+        iconStyleSelect.value = iconStyle;
+        iconStyleSelect.addEventListener('change', (e) => {
+            iconStyle = e.target.value;
+            localStorage.setItem('chess-icon-style', iconStyle);
+            renderBoard();
+        });
 
         document.getElementById('btn-new-game').addEventListener('click', () => {
             // Check for pending training before starting new game
