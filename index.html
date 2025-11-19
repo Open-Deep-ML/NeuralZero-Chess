@@ -340,15 +340,16 @@
             return model;
         }
 
-        // Helper: Convert ArrayBuffer to Base64 in chunks to avoid stack overflow
+        // Helper: Convert ArrayBuffer to Base64 without stack overflow
         function arrayBufferToBase64(buffer) {
             const bytes = new Uint8Array(buffer);
             let binary = '';
-            const chunkSize = 0x8000; // 32KB chunks
-            for (let i = 0; i < bytes.length; i += chunkSize) {
-                const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-                binary += String.fromCharCode.apply(null, chunk);
+            
+            // Process byte by byte to avoid stack overflow
+            for (let i = 0; i < bytes.length; i++) {
+                binary += String.fromCharCode(bytes[i]);
             }
+            
             return btoa(binary);
         }
 
@@ -358,7 +359,7 @@
                 updateAIState("Saving to cloud...");
                 
                 await model.save(tf.io.withSaveHandler(async (artifacts) => {
-                    // FIX: Convert to base64 in chunks to avoid stack overflow
+                    // FIX: Convert to base64 without stack overflow
                     const weightsBase64 = arrayBufferToBase64(artifacts.weightData);
                     
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'model', `gen_${generation}`), {
