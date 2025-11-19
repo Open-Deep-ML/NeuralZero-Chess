@@ -634,7 +634,7 @@
             const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
 
             await aiModel.fit(inputTensor, labelTensor, {
-                epochs: 3,
+                epochs: 10,
                 batchSize: 32,
                 shuffle: true,
                 callbacks: {
