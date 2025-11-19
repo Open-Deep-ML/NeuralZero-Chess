@@ -340,13 +340,26 @@
             return model;
         }
 
+        // Helper: Convert ArrayBuffer to Base64 in chunks to avoid stack overflow
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            const chunkSize = 0x8000; // 32KB chunks
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+                const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+                binary += String.fromCharCode.apply(null, chunk);
+            }
+            return btoa(binary);
+        }
+
         // Save model to Firestore (No CORS!)
         async function saveModelToFirestore(model, generation) {
             try {
                 updateAIState("Saving to cloud...");
                 
                 await model.save(tf.io.withSaveHandler(async (artifacts) => {
-                    const weightsBase64 = btoa(String.fromCharCode(...new Uint8Array(artifacts.weightData)));
+                    // FIX: Convert to base64 in chunks to avoid stack overflow
+                    const weightsBase64 = arrayBufferToBase64(artifacts.weightData);
                     
                     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'model', `gen_${generation}`), {
                         topology: artifacts.modelTopology,
