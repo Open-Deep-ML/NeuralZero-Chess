@@ -215,6 +215,26 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
+        // Helpers for base64 <-> ArrayBuffer (Firestore-safe)
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binary = atob(base64);
+            const len = binary.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
         // Game Globals
         let game = new Chess();
         let board = null;
@@ -321,7 +341,7 @@
                 input[offset++] = piece && piece.color === 'b' ? 1 : 0;
             }
 
-            // 3b) Castling rights parsed from FEN (not using chess.castling)
+            // 3b) Castling rights parsed from FEN
             const fenParts = fen.split(' ');
             const castlingStr = fenParts[2] || '-';
             const hasK = castlingStr.includes('K') ? 1 : 0;
@@ -379,7 +399,6 @@
         }
 
         function createEnhancedModel() {
-            // Smaller network so (topology + weights) safely fit in Firestore doc
             const model = tf.sequential();
             
             model.add(tf.layers.dense({ 
@@ -426,23 +445,19 @@
             try {
                 updateAIState("Saving brain...");
 
-                // Always keep a local cache for fast reload
+                // Local cache
                 await model.save("localstorage://chess-ai-model-v2");
 
-                // Use TF.js custom save handler to capture full artifacts
+                // Custom save handler to capture artifacts
                 const handler = tf.io.withSaveHandler(async (artifacts) => {
                     const { modelTopology, weightSpecs, weightData } = artifacts;
-
-                    if (!weightData || !weightSpecs) {
-                        console.warn("No weights to save (weightData/weightSpecs missing).");
-                    }
 
                     const topologyObj = typeof modelTopology === "string"
                         ? JSON.parse(modelTopology)
                         : modelTopology;
 
-                    const weightBytes = weightData
-                        ? new Uint8Array(weightData)
+                    const weightDataBase64 = weightData
+                        ? arrayBufferToBase64(weightData)
                         : null;
 
                     const metaRef = doc(
@@ -462,7 +477,7 @@
                             timestamp: Date.now(),
                             modelTopology: topologyObj,
                             weightSpecs: weightSpecs || [],
-                            weightData: weightBytes || null
+                            weightDataBase64: weightDataBase64
                         },
                         { merge: true }
                     );
@@ -479,7 +494,6 @@
                     };
                 });
 
-                // Trigger our custom handler
                 await model.save(handler);
                 updateAIState("Ready");
 
@@ -510,10 +524,10 @@
                     const data = metaSnap.data();
                     modelGeneration = data.generation || 0;
 
-                    if (data.modelTopology && data.weightSpecs && data.weightData) {
+                    if (data.modelTopology && data.weightSpecs && data.weightDataBase64) {
                         console.log("Found shared model in Firestore, rebuilding...");
 
-                        const buffer = data.weightData.buffer;
+                        const buffer = base64ToArrayBuffer(data.weightDataBase64);
                         const weightMap = await tf.io.decodeWeights(
                             buffer,
                             data.weightSpecs
@@ -1145,7 +1159,7 @@
                 game.reset();
                 selectedSquare = null;
                 renderBoard();
-                document.getElementById('move-history').innerHTML = '';
+                document.getElementById('move-history').innerHTML = '<div class="text-gray-500 text-center italic mt-4">Game started</div>';
                 document.getElementById('board-overlay').classList.add('hidden');
                 updateAIState("Ready");
             }
@@ -1155,19 +1169,19 @@
             game.reset();
             selectedSquare = null;
             renderBoard();
-            document.getElementById('move-history').innerHTML = '';
+            document.getElementById('move-history').innerHTML = '<div class="text-gray-500 text-center italic mt-4">Game started</div>';
             document.getElementById('board-overlay').classList.add('hidden');
             updateAIState("Ready");
         });
 
         document.getElementById('btn-reset-ai').addEventListener('click', async () => {
-            if(confirm("This will wipe the AI's memory and reset its brain. Are you sure?")) {
+            if(confirm("This will wipe the AI's memory (local & shared) and reset its brain. Are you sure?")) {
                 try {
                     await tf.io.removeModel('localstorage://chess-ai-model-v2');
                 } catch(e) {
-                    console.log("Error removing model:", e);
+                    console.log("Error removing local model:", e);
                 }
-                // Also wipe shared Firestore model so the hive restarts from scratch
+                // Optional: clear Firestore model doc (comment out if you don't want this)
                 try {
                     const metaRef = doc(
                         db,
@@ -1181,10 +1195,10 @@
                     await setDoc(metaRef, {
                         modelTopology: null,
                         weightSpecs: [],
-                        weightData: null,
+                        weightDataBase64: null,
                         generation: 0
                     }, { merge: true });
-                } catch (e) {
+                } catch(e) {
                     console.log("Error clearing Firestore model:", e);
                 }
                 location.reload();
