@@ -448,55 +448,38 @@
                 // Local cache
                 await model.save("localstorage://chess-ai-model-v2");
 
-                // Custom save handler to capture artifacts
-                const handler = tf.io.withSaveHandler(async (artifacts) => {
-                    const { modelTopology, weightSpecs, weightData } = artifacts;
+                // Encode topology + weights manually (no Uint8Array in Firestore)
+                const modelTopology = model.toJSON(null, false); // plain object
+                const weights = model.getWeights();
+                const { data, specs } = await tf.io.encodeWeights(weights);
+                const weightDataBase64 = arrayBufferToBase64(data.buffer);
 
-                    const topologyObj = typeof modelTopology === "string"
-                        ? JSON.parse(modelTopology)
-                        : modelTopology;
+                const metaRef = doc(
+                    db,
+                    "artifacts",
+                    appId,
+                    "public",
+                    "data",
+                    "model",
+                    "current"
+                );
 
-                    const weightDataBase64 = weightData
-                        ? arrayBufferToBase64(weightData)
-                        : null;
+                await setDoc(
+                    metaRef,
+                    {
+                        generation,
+                        timestamp: Date.now(),
+                        modelTopology,
+                        weightSpecs: specs || [],
+                        weightDataBase64: weightDataBase64
+                    },
+                    { merge: true }
+                );
 
-                    const metaRef = doc(
-                        db,
-                        "artifacts",
-                        appId,
-                        "public",
-                        "data",
-                        "model",
-                        "current"
-                    );
-
-                    await setDoc(
-                        metaRef,
-                        {
-                            generation,
-                            timestamp: Date.now(),
-                            modelTopology: topologyObj,
-                            weightSpecs: weightSpecs || [],
-                            weightDataBase64: weightDataBase64
-                        },
-                        { merge: true }
-                    );
-
-                    console.log(
-                        `Model gen ${generation} saved to Firestore (shared) & localStorage (cached).`
-                    );
-
-                    return {
-                        modelArtifactsInfo: {
-                            dateSaved: new Date(),
-                            modelTopologyType: "JSON"
-                        }
-                    };
-                });
-
-                await model.save(handler);
+                console.log(
+                    `Model gen ${generation} saved to Firestore (shared) & localStorage (cached).`
+                );
                 updateAIState("Ready");
-
                 return true;
             } catch (e) {
                 console.error("Model save failed:", e);
@@ -1181,7 +1164,7 @@
                 } catch(e) {
                     console.log("Error removing local model:", e);
                 }
-                // Optional: clear Firestore model doc (comment out if you don't want this)
+                // Clear Firestore model doc with Firestore-safe values
                 try {
                     const metaRef = doc(
                         db,
