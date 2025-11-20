@@ -551,6 +551,7 @@
         async function evaluateBoard(fen) {
             const chess = new Chess(fen);
             
+            // --- Hand-crafted heuristic (white-centric at first) ---
             let material = 0;
             const board = chess.board();
             for (let row of board) {
@@ -585,19 +586,26 @@
             chess.load(fen);
             const mobility = (whiteMoves - blackMoves) / 20.0;
             
-            const heuristic = Math.tanh(
+            let heuristic = Math.tanh(
                 (material / 20.0) + 
                 (centerControl / 4.0) + 
                 (mobility * 0.3)
             );
 
+            // --- Convert heuristic to "side-to-move" perspective ---
+            if (chess.turn() === 'b') {
+                heuristic = -heuristic;
+            }
+
+            // --- Neural net evaluation (trained to be side-to-move value) ---
             const tensor = boardToTensor(fen);
             const prediction = aiModel.predict(tensor);
             const nnValue = (await prediction.data())[0];
             tensor.dispose();
             prediction.dispose();
 
-            return (heuristic * 0.4) + (nnValue * 0.6);
+            // Strongly favor learned value so training actually changes play
+            return (heuristic * 0.1) + (nnValue * 0.9);
         }
 
         async function runMCTS(rootState, simulations) {
@@ -620,14 +628,17 @@
                 let value = 0;
                 if (simGame.game_over()) {
                     if (simGame.in_checkmate()) {
-                        value = simGame.turn() === 'w' ? -1 : 1;
+                        // side to move is checkmated -> from its perspective, -1
+                        value = -1;
                     } else {
                         value = 0;
                     }
                 } else {
+                    // value from side-to-move perspective at leaf
                     value = await evaluateBoard(simGame.fen());
                 }
                 
+                // Backup: flip perspective each ply
                 while (node !== null) {
                     node.visits++;
                     node.value += value;
@@ -638,6 +649,7 @@
             
             if (root.children.length === 0) return null;
             
+            // Greedy pick by visit count (still deterministic, but now learnable)
             return root.children.reduce((best, child) => 
                 child.visits > best.visits ? child : best
             ).move;
@@ -978,10 +990,19 @@
                 currentValue = currentValue * GAMMA;
             }
             
+            // Store values from side-to-move perspective at each FEN
             for (let i = 0; i < positions.length; i++) {
+                const fen = positions[i];
+                const turn = fen.split(' ')[1]; // 'w' or 'b'
+                let v = values[i];
+
+                if (turn === 'b') {
+                    v = -v;
+                }
+
                 currentGamePositions.push({
-                    fen: positions[i],
-                    value: values[i]
+                    fen,
+                    value: v
                 });
             }
             
@@ -1006,10 +1027,10 @@
             if (game.in_checkmate()) {
                 if (game.turn() === 'w') {
                     msg = "Checkmate! AI (Black) Wins!";
-                    result = -1;
+                    result = -1; // from white's perspective
                 } else {
                     msg = "Checkmate! You (White) Win!";
-                    result = 1;
+                    result = 1;  // from white's perspective
                 }
             } else if (game.in_draw()) {
                 msg = "Draw!";
