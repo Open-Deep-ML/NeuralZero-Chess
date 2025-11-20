@@ -215,6 +215,26 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
+        // --- Helpers: ArrayBuffer <-> base64 for Firestore storage ---
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binary = atob(base64);
+            const len = binary.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
         // Game Globals
         let game = new Chess();
         let board = null;
@@ -379,10 +399,11 @@
         }
 
         function createEnhancedModel() {
+            // Smaller network so (topology + weights) safely fit in Firestore 1MiB doc
             const model = tf.sequential();
             
             model.add(tf.layers.dense({ 
-                units: 256, 
+                units: 64, 
                 activation: 'relu', 
                 inputShape: [896],
                 kernelRegularizer: tf.regularizers.l2({ l2: 0.0001 })
@@ -390,21 +411,21 @@
             model.add(tf.layers.dropout({ rate: 0.3 }));
             
             model.add(tf.layers.dense({ 
-                units: 256, 
+                units: 64, 
                 activation: 'relu',
                 kernelRegularizer: tf.regularizers.l2({ l2: 0.0001 })
             }));
             model.add(tf.layers.dropout({ rate: 0.3 }));
             
             model.add(tf.layers.dense({ 
-                units: 128, 
+                units: 32, 
                 activation: 'relu',
                 kernelRegularizer: tf.regularizers.l2({ l2: 0.0001 })
             }));
             model.add(tf.layers.dropout({ rate: 0.2 }));
             
             model.add(tf.layers.dense({ 
-                units: 64, 
+                units: 16, 
                 activation: 'relu'
             }));
             
@@ -419,23 +440,33 @@
             return model;
         }
 
-        // ---- MODEL PERSISTENCE: localStorage only; Firestore only stores tiny metadata ----
+        // ---- MODEL PERSISTENCE: full model in Firestore + localStorage cache ----
 
+        // Save full model (topology + weights) into Firestore AND cache in localStorage
         async function saveModelToFirestore(model, generation) {
             try {
                 updateAIState("Saving brain...");
                 
-                // Save model to browser localStorage
+                // 1) Cache model locally in the browser (fast reload, offline)
                 await model.save("localstorage://chess-ai-model-v2");
 
-                // Store only small metadata in Firestore (no weights, no blobs)
+                // 2) Serialize weights + topology for Firestore
+                const modelTopology = model.toJSON(null, false); // pure JSON
+                const weights = model.getWeights();
+                const { data, specs } = await tf.io.encodeWeights(weights);
+                const weightDataBase64 = arrayBufferToBase64(data.buffer);
+
+                // 3) Store everything in a single Firestore doc
                 const metaRef = doc(db, "artifacts", appId, "public", "data", "model", "current");
                 await setDoc(metaRef, {
                     generation,
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    modelTopology,
+                    weightSpecs: specs,
+                    weightDataBase64
                 }, { merge: true });
 
-                console.log(`Model gen ${generation} saved locally; metadata stored in Firestore.`);
+                console.log(`Model gen ${generation} saved locally and in Firestore.`);
                 return true;
             } catch (e) {
                 console.error("Model save failed:", e);
@@ -443,28 +474,55 @@
             }
         }
 
+        // Try to load full model from Firestore; fall back to localStorage; else null
         async function loadModelFromFirestore() {
             try {
                 updateAIState("Loading brain...");
 
-                // Try to read metadata (optional – mainly for generation display)
                 const metaRef = doc(db, "artifacts", appId, "public", "data", "model", "current");
                 const metaSnap = await getDoc(metaRef);
+
                 if (metaSnap.exists()) {
-                    modelGeneration = metaSnap.data().generation || 0;
+                    const data = metaSnap.data();
+                    modelGeneration = data.generation || 0;
+
+                    if (data.modelTopology && data.weightSpecs && data.weightDataBase64) {
+                        // Rebuild model from stored topology + weights
+                        const buffer = base64ToArrayBuffer(data.weightDataBase64);
+                        const weightMap = await tf.io.decodeWeights(buffer, data.weightSpecs);
+                        
+                        const loaded = await tf.models.modelFromJSON(data.modelTopology);
+                        loaded.compile({
+                            optimizer: tf.train.adam(0.0005),
+                            loss: "meanSquaredError",
+                            metrics: ["mae"]
+                        });
+
+                        const tensors = data.weightSpecs.map(spec => weightMap[spec.name]);
+                        loaded.setWeights(tensors);
+                        Object.values(weightMap).forEach(t => t.dispose());
+
+                        console.log("Loaded model from Firestore");
+                        return loaded;
+                    }
                 }
 
-                // Load the actual model from localStorage
-                const model = await tf.loadLayersModel("localstorage://chess-ai-model-v2");
-                model.compile({
-                    optimizer: tf.train.adam(0.0005),
-                    loss: "meanSquaredError",
-                    metrics: ["mae"]
-                });
-                console.log("Loaded model from localStorage");
-                return model;
+                // Fallback: try browser cache if Firestore has no full model yet
+                try {
+                    const localModel = await tf.loadLayersModel("localstorage://chess-ai-model-v2");
+                    localModel.compile({
+                        optimizer: tf.train.adam(0.0005),
+                        loss: "meanSquaredError",
+                        metrics: ["mae"]
+                    });
+                    console.log("Loaded model from localStorage (fallback)");
+                    return localModel;
+                } catch (e) {
+                    console.log("No local model found either, will create a new one.");
+                    return null;
+                }
             } catch (e) {
-                console.log("No local model found, will create a new one.");
+                console.log("Model load failed, will create a new one:", e);
                 return null;
             }
         }
@@ -474,7 +532,7 @@
                 aiModel = await loadModelFromFirestore();
                 
                 if (aiModel) {
-                    updateAIState("Ready (Local Brain)");
+                    updateAIState("Ready (Loaded Brain)");
                     return;
                 }
                 
