@@ -215,26 +215,6 @@
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // --- Helpers: ArrayBuffer <-> base64 for Firestore storage ---
-        function arrayBufferToBase64(buffer) {
-            const bytes = new Uint8Array(buffer);
-            let binary = '';
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
-            return btoa(binary);
-        }
-
-        function base64ToArrayBuffer(base64) {
-            const binary = atob(base64);
-            const len = binary.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binary.charCodeAt(i);
-            }
-            return bytes.buffer;
-        }
-
         // Game Globals
         let game = new Chess();
         let board = null;
@@ -399,7 +379,7 @@
         }
 
         function createEnhancedModel() {
-            // Smaller network so (topology + weights) safely fit in Firestore 1MiB doc
+            // Smaller network so (topology + weights) safely fit in Firestore doc
             const model = tf.sequential();
             
             model.add(tf.layers.dense({ 
@@ -440,85 +420,143 @@
             return model;
         }
 
-        // ---- MODEL PERSISTENCE: full model in Firestore + localStorage cache ----
+        // ---- MODEL PERSISTENCE: shared model in Firestore + localStorage cache ----
 
-        // Save full model (topology + weights) into Firestore AND cache in localStorage
         async function saveModelToFirestore(model, generation) {
             try {
                 updateAIState("Saving brain...");
-                
-                // 1) Cache model locally in the browser (fast reload, offline)
+
+                // Always keep a local cache for fast reload
                 await model.save("localstorage://chess-ai-model-v2");
 
-                // 2) Serialize weights + topology for Firestore
-                const modelTopology = model.toJSON(null, false); // pure JSON
-                const weights = model.getWeights();
-                const { data, specs } = await tf.io.encodeWeights(weights);
-                const weightDataBase64 = arrayBufferToBase64(data.buffer);
+                // Use TF.js custom save handler to capture full artifacts
+                const handler = tf.io.withSaveHandler(async (artifacts) => {
+                    const { modelTopology, weightSpecs, weightData } = artifacts;
 
-                // 3) Store everything in a single Firestore doc
-                const metaRef = doc(db, "artifacts", appId, "public", "data", "model", "current");
-                await setDoc(metaRef, {
-                    generation,
-                    timestamp: Date.now(),
-                    modelTopology,
-                    weightSpecs: specs,
-                    weightDataBase64
-                }, { merge: true });
+                    if (!weightData || !weightSpecs) {
+                        console.warn("No weights to save (weightData/weightSpecs missing).");
+                    }
 
-                console.log(`Model gen ${generation} saved locally and in Firestore.`);
+                    const topologyObj = typeof modelTopology === "string"
+                        ? JSON.parse(modelTopology)
+                        : modelTopology;
+
+                    const weightBytes = weightData
+                        ? new Uint8Array(weightData)
+                        : null;
+
+                    const metaRef = doc(
+                        db,
+                        "artifacts",
+                        appId,
+                        "public",
+                        "data",
+                        "model",
+                        "current"
+                    );
+
+                    await setDoc(
+                        metaRef,
+                        {
+                            generation,
+                            timestamp: Date.now(),
+                            modelTopology: topologyObj,
+                            weightSpecs: weightSpecs || [],
+                            weightData: weightBytes || null
+                        },
+                        { merge: true }
+                    );
+
+                    console.log(
+                        `Model gen ${generation} saved to Firestore (shared) & localStorage (cached).`
+                    );
+
+                    return {
+                        modelArtifactsInfo: {
+                            dateSaved: new Date(),
+                            modelTopologyType: "JSON"
+                        }
+                    };
+                });
+
+                // Trigger our custom handler
+                await model.save(handler);
+                updateAIState("Ready");
+
                 return true;
             } catch (e) {
                 console.error("Model save failed:", e);
+                updateAIState("Ready (save failed)");
                 return false;
             }
         }
 
-        // Try to load full model from Firestore; fall back to localStorage; else null
         async function loadModelFromFirestore() {
             try {
                 updateAIState("Loading brain...");
 
-                const metaRef = doc(db, "artifacts", appId, "public", "data", "model", "current");
+                const metaRef = doc(
+                    db,
+                    "artifacts",
+                    appId,
+                    "public",
+                    "data",
+                    "model",
+                    "current"
+                );
                 const metaSnap = await getDoc(metaRef);
 
                 if (metaSnap.exists()) {
                     const data = metaSnap.data();
                     modelGeneration = data.generation || 0;
 
-                    if (data.modelTopology && data.weightSpecs && data.weightDataBase64) {
-                        // Rebuild model from stored topology + weights
-                        const buffer = base64ToArrayBuffer(data.weightDataBase64);
-                        const weightMap = await tf.io.decodeWeights(buffer, data.weightSpecs);
-                        
-                        const loaded = await tf.models.modelFromJSON(data.modelTopology);
+                    if (data.modelTopology && data.weightSpecs && data.weightData) {
+                        console.log("Found shared model in Firestore, rebuilding...");
+
+                        const buffer = data.weightData.buffer;
+                        const weightMap = await tf.io.decodeWeights(
+                            buffer,
+                            data.weightSpecs
+                        );
+
+                        const loaded = await tf.models.modelFromJSON(
+                            data.modelTopology
+                        );
+
                         loaded.compile({
                             optimizer: tf.train.adam(0.0005),
                             loss: "meanSquaredError",
                             metrics: ["mae"]
                         });
 
-                        const tensors = data.weightSpecs.map(spec => weightMap[spec.name]);
-                        loaded.setWeights(tensors);
-                        Object.values(weightMap).forEach(t => t.dispose());
+                        const orderedTensors = data.weightSpecs.map(
+                            (spec) => weightMap[spec.name]
+                        );
+                        loaded.setWeights(orderedTensors);
+                        Object.values(weightMap).forEach((t) => t.dispose());
 
-                        console.log("Loaded model from Firestore");
+                        // Cache locally for quick next loads
+                        await loaded.save("localstorage://chess-ai-model-v2");
+
+                        console.log("Loaded model from Firestore (shared brain).");
                         return loaded;
                     }
                 }
 
-                // Fallback: try browser cache if Firestore has no full model yet
+                // Fallback: localStorage cache
                 try {
-                    const localModel = await tf.loadLayersModel("localstorage://chess-ai-model-v2");
+                    const localModel = await tf.loadLayersModel(
+                        "localstorage://chess-ai-model-v2"
+                    );
                     localModel.compile({
                         optimizer: tf.train.adam(0.0005),
                         loss: "meanSquaredError",
                         metrics: ["mae"]
                     });
-                    console.log("Loaded model from localStorage (fallback)");
+                    console.log("Loaded model from localStorage (fallback).");
                     return localModel;
                 } catch (e) {
-                    console.log("No local model found either, will create a new one.");
+                    console.log("No local model found, creating a fresh one.");
                     return null;
                 }
             } catch (e) {
@@ -551,7 +589,6 @@
         async function evaluateBoard(fen) {
             const chess = new Chess(fen);
             
-            // --- Hand-crafted heuristic (white-centric at first) ---
             let material = 0;
             const board = chess.board();
             for (let row of board) {
@@ -586,26 +623,19 @@
             chess.load(fen);
             const mobility = (whiteMoves - blackMoves) / 20.0;
             
-            let heuristic = Math.tanh(
+            const heuristic = Math.tanh(
                 (material / 20.0) + 
                 (centerControl / 4.0) + 
                 (mobility * 0.3)
             );
 
-            // --- Convert heuristic to "side-to-move" perspective ---
-            if (chess.turn() === 'b') {
-                heuristic = -heuristic;
-            }
-
-            // --- Neural net evaluation (trained to be side-to-move value) ---
             const tensor = boardToTensor(fen);
             const prediction = aiModel.predict(tensor);
             const nnValue = (await prediction.data())[0];
             tensor.dispose();
             prediction.dispose();
 
-            // Strongly favor learned value so training actually changes play
-            return (heuristic * 0.1) + (nnValue * 0.9);
+            return (heuristic * 0.4) + (nnValue * 0.6);
         }
 
         async function runMCTS(rootState, simulations) {
@@ -628,17 +658,14 @@
                 let value = 0;
                 if (simGame.game_over()) {
                     if (simGame.in_checkmate()) {
-                        // side to move is checkmated -> from its perspective, -1
-                        value = -1;
+                        value = simGame.turn() === 'w' ? -1 : 1;
                     } else {
                         value = 0;
                     }
                 } else {
-                    // value from side-to-move perspective at leaf
                     value = await evaluateBoard(simGame.fen());
                 }
                 
-                // Backup: flip perspective each ply
                 while (node !== null) {
                     node.visits++;
                     node.value += value;
@@ -649,10 +676,11 @@
             
             if (root.children.length === 0) return null;
             
-            // Greedy pick by visit count (still deterministic, but now learnable)
-            return root.children.reduce((best, child) => 
-                child.visits > best.visits ? child : best
-            ).move;
+            // Slight randomness over best children (avoid always same move)
+            const sorted = [...root.children].sort((a, b) => b.visits - a.visits);
+            const topK = sorted.slice(0, Math.min(3, sorted.length));
+            const choice = topK[Math.floor(Math.random() * topK.length)];
+            return choice.move;
         }
 
         async function getBestMove(depth) {
@@ -990,19 +1018,10 @@
                 currentValue = currentValue * GAMMA;
             }
             
-            // Store values from side-to-move perspective at each FEN
             for (let i = 0; i < positions.length; i++) {
-                const fen = positions[i];
-                const turn = fen.split(' ')[1]; // 'w' or 'b'
-                let v = values[i];
-
-                if (turn === 'b') {
-                    v = -v;
-                }
-
                 currentGamePositions.push({
-                    fen,
-                    value: v
+                    fen: positions[i],
+                    value: values[i]
                 });
             }
             
@@ -1027,10 +1046,10 @@
             if (game.in_checkmate()) {
                 if (game.turn() === 'w') {
                     msg = "Checkmate! AI (Black) Wins!";
-                    result = -1; // from white's perspective
+                    result = -1;
                 } else {
                     msg = "Checkmate! You (White) Win!";
-                    result = 1;  // from white's perspective
+                    result = 1;
                 }
             } else if (game.in_draw()) {
                 msg = "Draw!";
@@ -1147,6 +1166,26 @@
                     await tf.io.removeModel('localstorage://chess-ai-model-v2');
                 } catch(e) {
                     console.log("Error removing model:", e);
+                }
+                // Also wipe shared Firestore model so the hive restarts from scratch
+                try {
+                    const metaRef = doc(
+                        db,
+                        "artifacts",
+                        appId,
+                        "public",
+                        "data",
+                        "model",
+                        "current"
+                    );
+                    await setDoc(metaRef, {
+                        modelTopology: null,
+                        weightSpecs: [],
+                        weightData: null,
+                        generation: 0
+                    }, { merge: true });
+                } catch (e) {
+                    console.log("Error clearing Firestore model:", e);
                 }
                 location.reload();
             }
