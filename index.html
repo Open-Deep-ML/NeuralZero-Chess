@@ -2,1079 +2,777 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Neural Chess - Self Learning AI</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chess.js for game logic -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <!-- TensorFlow.js for Machine Learning -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-    <!-- FontAwesome for Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+    <title>NeuralZero Chess - Self-Learning AI</title>
+    <!-- Chess.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js"></script>
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+    <!-- Firebase (compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
     <style>
-        .chess-piece {
-            cursor: pointer;
-            user-select: none;
-            transition: transform 0.1s;
+        body {
+            background: #0f172a;
+            color: #e5e7eb;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px;
         }
-        .chess-piece:hover {
-            transform: scale(1.1);
+        .container {
+            max-width: 1000px;
+            width: 100%;
+            display: flex;
+            gap: 24px;
         }
-        .chess-piece:active {
-            transform: scale(0.95);
+        .board-container {
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        #board {
+            display: grid;
+            grid-template-columns: repeat(8, 64px);
+            grid-template-rows: repeat(8, 64px);
         }
         .square {
-            transition: background-color 0.2s;
+            width: 64px;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+            cursor: pointer;
+            box-sizing: border-box;
+            user-select: none;
         }
-        .last-move {
-            background-color: rgba(255, 255, 0, 0.3) !important;
+        .light {
+            background-color: #f0d9b5;
         }
-        .highlight {
-            background-color: rgba(0, 255, 0, 0.2) !important;
+        .dark {
+            background-color: #b58863;
         }
-        .capture-hint {
-            background-color: rgba(255, 0, 0, 0.2) !important;
+        .square.selected {
+            outline: 3px solid #f97316;
         }
-        
-        .loader {
-            border: 3px solid #f3f3f3;
-            border-radius: 50%;
-            border-top: 3px solid #3b82f6;
-            width: 20px;
-            height: 20px;
-            animation: spin 1s linear infinite;
+        .square.highlight {
+            box-shadow: inset 0 0 0 3px rgba(34,197,94,0.8);
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        h1 {
+            margin: 0 0 8px;
+            font-size: 24px;
+        }
+        button {
+            background: #1d4ed8;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        button:hover {
+            background: #2563eb;
+        }
+        button.secondary {
+            background: #374151;
+        }
+        button.secondary:hover {
+            background: #4b5563;
+        }
+        #status, #trainingStatus, #meta {
+            font-size: 14px;
+            line-height: 1.4;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: #020617;
+        }
+        #status {
+            border: 1px solid #4b5563;
+        }
+        #trainingStatus {
+            border: 1px dashed #6b7280;
+        }
+        #meta {
+            border: 1px solid #374151;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            background: #16a34a;
+            color: white;
+            margin-right: 6px;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        a {
+            color: #38bdf8;
         }
     </style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen flex flex-col font-sans">
+<body>
+<div class="container">
+    <div class="board-container">
+        <div id="board"></div>
+    </div>
 
-    <!-- Header -->
-    <header class="bg-gray-800 border-b border-gray-700 p-4 shadow-lg">
-        <div class="container mx-auto flex justify-between items-center">
-            <div class="flex items-center space-x-3">
-                <i class="fa-solid fa-brain text-blue-400 text-2xl"></i>
-                <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-                    NeuralZero Chess
-                </h1>
-            </div>
-            <div class="flex items-center space-x-4 text-sm">
-                <div class="flex flex-col items-end">
-                    <span class="text-gray-400">Global Games</span>
-                    <span id="global-counter" class="font-mono font-bold text-green-400">Connecting...</span>
-                </div>
-            </div>
-        </div>
-    </header>
-
-    <!-- Main Content -->
-    <main class="flex-grow container mx-auto p-4 flex flex-col lg:flex-row gap-6 items-start justify-center">
-        
-        <!-- Left Panel: Game Info & Controls -->
-        <div class="w-full lg:w-1/4 space-y-4 order-2 lg:order-1">
-            
-            <!-- AI Status Card -->
-            <div class="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-lg">
-                <h2 class="text-lg font-semibold mb-3 flex items-center">
-                    <i class="fa-solid fa-microchip mr-2 text-purple-400"></i> AI Status
-                </h2>
-                <div class="space-y-3 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-gray-400">State</span>
-                        <span id="ai-state" class="text-blue-300 font-medium">Thinking...</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-400">Confidence</span>
-                        <span id="ai-confidence" class="text-gray-200">0.00</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-400">Global Batch</span>
-                        <span id="local-games-count" class="text-gray-200">0 / 2</span>
-                    </div>
-                    
-                    <!-- Training Progress Bar -->
-                    <div class="mt-2">
-                        <div class="flex justify-between text-xs text-gray-500 mb-1">
-                            <span>Community Progress</span>
-                            <span id="buffer-percent">0%</span>
-                        </div>
-                        <div class="w-full bg-gray-700 rounded-full h-2">
-                            <div id="training-progress" class="bg-purple-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Game Controls -->
-            <div class="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-lg">
-                <h2 class="text-lg font-semibold mb-3">Controls</h2>
-                <div class="flex flex-col space-y-2">
-                    <div class="mb-2">
-                        <label for="icon-style" class="block text-sm text-gray-400 mb-1">Icon Style</label>
-                        <select id="icon-style" class="w-full py-2 px-3 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="unicode">Unicode</option>
-                            <option value="fontawesome">Font Awesome</option>
-                        </select>
-                    </div>
-                    <button id="btn-new-game" class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 rounded-lg transition flex items-center justify-center space-x-2">
-                        <i class="fa-solid fa-arrows-rotate"></i>
-                        <span>New Game</span>
-                    </button>
-                    <button id="btn-reset-ai" class="w-full py-2 px-4 bg-red-900/50 hover:bg-red-900/80 text-red-200 border border-red-800 rounded-lg transition flex items-center justify-center space-x-2 text-xs">
-                        <i class="fa-solid fa-trash"></i>
-                        <span>Reset AI Brain</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Instructions -->
-            <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700 text-xs text-gray-400">
-                <p class="mb-2"><strong class="text-gray-300">Hive Mind Active:</strong></p>
-                <p>The AI is connected to a global database. When <span class="text-white font-bold">2 games</span> are played by the community (you + everyone else), this AI will automatically retrain on the new collective knowledge between games.</p>
-            </div>
+    <div class="panel">
+        <div>
+            <span class="badge">Experiment</span>
+            <h1>NeuralZero Chess</h1>
+            <p style="margin: 4px 0 0; font-size: 13px; color:#9ca3af;">
+                Play as <strong>White</strong> vs a small neural net as <strong>Black</strong>.
+                Every 16 games, the AI trains on its past games, and the updated model is saved
+                to Firestore (plus cached locally).
+            </p>
         </div>
 
-        <!-- Center: Chess Board -->
-        <div class="w-full lg:w-auto order-1 lg:order-2 flex flex-col items-center">
-            
-            <!-- Status Bar -->
-            <div id="game-status" class="mb-4 px-4 py-2 bg-gray-800 rounded-full border border-gray-600 text-sm font-medium flex items-center space-x-2">
-                <span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
-                <span>Your Turn (White)</span>
-            </div>
+        <div id="status">Loading model…</div>
 
-            <!-- The Board -->
-            <div class="relative p-3 bg-gray-800 rounded-lg shadow-2xl border-4 border-gray-700">
-                <div id="chessboard" class="grid grid-cols-8 grid-rows-8 w-[320px] h-[320px] sm:w-[400px] sm:h-[400px] md:w-[480px] md:h-[480px] bg-[#769656]">
-                </div>
-                
-                <!-- Overlay for Game Over / Training -->
-                <div id="board-overlay" class="hidden absolute inset-0 bg-black/80 z-10 flex flex-col items-center justify-center text-center p-6 backdrop-blur-sm rounded">
-                    <h3 id="overlay-title" class="text-2xl font-bold text-white mb-2">Game Over</h3>
-                    <p id="overlay-msg" class="text-gray-300 mb-4">White wins!</p>
-                    <div id="training-indicator" class="hidden flex flex-col items-center mt-4">
-                        <div class="loader mb-2"></div>
-                        <span class="text-blue-400 text-sm animate-pulse">Neural Network Training...</span>
-                        <span class="text-xs text-gray-500">Optimizing weights based on recent games</span>
-                    </div>
-                    <button id="btn-overlay-new" class="mt-4 px-6 py-2 bg-white text-black font-bold rounded-full hover:bg-gray-200 transition">
-                        Play Again
-                    </button>
-                </div>
-            </div>
-            
-            <!-- Coordinates (Bottom) -->
-            <div class="w-full flex justify-between px-2 mt-1 text-gray-500 text-xs font-mono">
-                <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
-            </div>
+        <div class="controls">
+            <button id="newGameBtn">New Game</button>
+            <button id="resetAIButton" class="secondary">Reset AI (wipe model)</button>
         </div>
 
-        <!-- Right Panel: Move History / Stats -->
-        <div class="w-full lg:w-1/4 order-3 h-full">
-            <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-lg overflow-hidden flex flex-col h-[500px]">
-                <div class="p-3 bg-gray-750 border-b border-gray-700 font-semibold text-sm">Move History</div>
-                <div id="move-history" class="flex-grow overflow-y-auto p-2 space-y-1 text-sm font-mono custom-scrollbar">
-                    <div class="text-gray-500 text-center italic mt-4">Game started</div>
-                </div>
-            </div>
+        <div id="trainingStatus">Training: idle</div>
+
+        <div id="meta">
+            <strong>How it works</strong><br>
+            • Board state → 12×8×8 bit-planes (piece type &amp; color) → 768-dim vector<br>
+            • Value network estimates how good a position is for the AI (−1…1).<br>
+            • After each game, all AI positions are stored with the final outcome (win/lose/draw).<br>
+            • Every 16 games, the model trains on this replay buffer and is saved to
+              Firestore at <code>artifacts/neuralzero-chess/public/data/hive_memory/model</code>
+              and cached in <code>localStorage</code>.<br>
+            • The AI uses an ε-greedy one-ply search (look ahead one move) to choose moves.
         </div>
+    </div>
+</div>
 
-    </main>
+<script>
+    // --- Global config ---
+    const AI_COLOR = 'b';  // AI plays black
+    const LOCAL_MODEL_KEY = 'localstorage://neuralzero-value-model';
+    const REPLAY_KEY = 'neuralzero-replay';
+    const GAMES_PLAYED_KEY = 'neuralzero-games-played';
+    const GAMES_PER_TRAIN = 16;
+    const MAX_REPLAY_SIZE = 5000;
+    const MIN_SAMPLES_FOR_TRAINING = 64;
+    const EXPLORATION_EPSILON = 0.15;
 
-    <!-- Footer -->
-    <footer class="bg-gray-800 border-t border-gray-700 p-4 text-center text-sm text-gray-400">
-        Brought to you by <a href="https://www.deep-ml.com/problems" target="_blank" class="text-blue-400 hover:text-blue-300 transition font-semibold">Deep-ML</a>
-    </footer>
+    // Firestore model location (matches README rules)
+    const FIRESTORE_APP_ID = 'neuralzero-chess';
+    const FIRESTORE_MODEL_SLOT_ID = 'model';
 
-    <!-- Firebase & App Logic -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, increment, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    let chess;
+    let selectedSquare = null;
+    let model = null;
+    let replayBuffer = [];
+    let currentGameStates = [];
+    let gamesPlayed = 0;
+    let isAiThinking = false;
 
-        // --- 1. Configuration & Globals ---
-        
+    let db = null;
+    let authReadyPromise = null;
+
+    const boardEl = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    const trainingStatusEl = document.getElementById('trainingStatus');
+
+    // --- Firebase init ---
+    function initFirebase() {
+        // TODO: replace with YOUR real Firebase config
         const firebaseConfig = {
-            apiKey: "AIzaSyABBWaOz5jtfoethdlpWztnFpIDsb7SRvg",
-            authDomain: "neuralzero-chess.firebaseapp.com",
-            projectId: "neuralzero-chess",
-            storageBucket: "neuralzero-chess.firebasestorage.app",
-            messagingSenderId: "99508004902",
-            appId: "1:99508004902:web:544dbd03c9d31f2cbedee7",
-            measurementId: "G-Y6T07XBS8N"
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_AUTH_DOMAIN",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_BUCKET",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
         };
 
-        const appId = 'neuralzero-chess-v2';
-        
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        // Game Globals
-        let game = new Chess();
-        let board = null;
-        let aiModel = null;
-        let isTraining = false;
-        let gameHistory = [];
-        let lastGlobalCount = -1;
-        let selectedSquare = null;
-        let trainingPending = false;
-        let modelGeneration = 0;
-        
-        const GAMES_PER_TRAINING = 2;
-        const HIVE_SLOTS = 20;
-        const MCTS_SIMULATIONS = 80;
-        const PIECE_VALUES = { p: 1, n: 3, b: 3.2, r: 5, q: 9, k: 0 };
-        const GAMMA = 0.99;
-        
-        // --- 2. AI / TensorFlow Logic ---
-
-        class MCTSNode {
-            constructor(gameState, move = null, parent = null) {
-                this.gameState = new Chess(gameState.fen());
-                this.move = move;
-                this.parent = parent;
-                this.children = [];
-                this.visits = 0;
-                this.value = 0;
-                this.untriedMoves = gameState.moves({ verbose: true });
-            }
-
-            isFullyExpanded() {
-                return this.untriedMoves.length === 0;
-            }
-
-            bestChild(explorationParam = 1.41) {
-                return this.children.reduce((best, child) => {
-                    const exploitation = child.value / (child.visits + 1e-8);
-                    const exploration = Math.sqrt(Math.log(this.visits + 1) / (child.visits + 1e-8));
-                    const uct = exploitation + explorationParam * exploration;
-                    
-                    const bestExploitation = best.value / (best.visits + 1e-8);
-                    const bestExploration = Math.sqrt(Math.log(this.visits + 1) / (best.visits + 1e-8));
-                    const bestUct = bestExploitation + explorationParam * bestExploration;
-                    
-                    return uct > bestUct ? child : best;
-                });
-            }
-
-            expand() {
-                const move = this.untriedMoves.pop();
-                const newGame = new Chess(this.gameState.fen());
-                newGame.move(move);
-                const childNode = new MCTSNode(newGame, move, this);
-                this.children.push(childNode);
-                return childNode;
-            }
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
         }
+        db = firebase.firestore();
 
-        // boardToTensor without chess.castling / chess.kings
-        function boardToTensor(fen) {
-            const chess = new Chess(fen);
-            const boardArr = chess.board();
-            const input = new Float32Array(896);
-            
-            const pieceMap = {
-                'p': 0, 'n': 1, 'b': 2, 'r': 3, 'q': 4, 'k': 5,
-                'P': 6, 'N': 7, 'B': 8, 'R': 9, 'Q': 10, 'K': 11
-            };
-
-            // 1) Piece positions (768 features)
-            for (let i = 0; i < 8; i++) {
-                for (let j = 0; j < 8; j++) {
-                    const piece = boardArr[i][j];
-                    if (piece) {
-                        const key = piece.color === 'w'
-                            ? piece.type.toUpperCase()
-                            : piece.type;
-                        const pieceIdx = pieceMap[key];
-                        const squareIndex = i * 8 + j;
-                        input[squareIndex * 12 + pieceIdx] = 1;
-                    }
-                }
-            }
-
-            // 2) Mobility features (64 features)
-            let offset = 768;
-            for (let i = 0; i < 8; i++) {
-                for (let j = 0; j < 8; j++) {
-                    const square =
-                        String.fromCharCode('a'.charCodeAt(0) + j) + (8 - i);
-                    const moves = chess.moves({ square, verbose: true });
-                    input[offset++] = Math.min(moves.length / 10.0, 1.0);
-                }
-            }
-
-            // 3) Additional features (64 features)
-            offset = 832;
-
-            // 3a) Center control (d4, d5, e4, e5)
-            const centerSquares = ['d4', 'd5', 'e4', 'e5'];
-            for (const sq of centerSquares) {
-                const piece = chess.get(sq);
-                input[offset++] = piece && piece.color === 'w' ? 1 : 0;
-                input[offset++] = piece && piece.color === 'b' ? 1 : 0;
-            }
-
-            // 3b) Castling rights parsed from FEN (not using chess.castling)
-            const fenParts = fen.split(' ');
-            const castlingStr = fenParts[2] || '-';
-            const hasK = castlingStr.includes('K') ? 1 : 0;
-            const hasQ = castlingStr.includes('Q') ? 1 : 0;
-            const hask = castlingStr.includes('k') ? 1 : 0;
-            const hasq = castlingStr.includes('q') ? 1 : 0;
-            input[offset++] = hasK;
-            input[offset++] = hasQ;
-            input[offset++] = hask;
-            input[offset++] = hasq;
-
-            // 3c) King position features (scan board)
-            let wFileNorm = 0;
-            let wRankNorm = 0;
-            let bFileNorm = 0;
-            let bRankNorm = 0;
-
-            for (let i = 0; i < 8; i++) {
-                for (let j = 0; j < 8; j++) {
-                    const piece = boardArr[i][j];
-                    if (piece && piece.type === 'k') {
-                        const fileNorm = j / 7.0;
-                        const rankNorm = (7 - i) / 7.0;
-                        if (piece.color === 'w') {
-                            wFileNorm = fileNorm;
-                            wRankNorm = rankNorm;
-                        } else {
-                            bFileNorm = fileNorm;
-                            bRankNorm = rankNorm;
-                        }
-                    }
-                }
-            }
-
-            input[offset++] = wFileNorm;
-            input[offset++] = wRankNorm;
-            input[offset++] = bFileNorm;
-            input[offset++] = bRankNorm;
-
-            // 3d) Game phase (remaining material)
-            let totalMaterial = 0;
-            for (let row of boardArr) {
-                for (let p of row) {
-                    if (p && p.type !== 'k') {
-                        totalMaterial += PIECE_VALUES[p.type] || 0;
-                    }
-                }
-            }
-            input[offset++] = Math.min(totalMaterial / 78.0, 1.0);
-
-            // 3e) Turn to move
-            input[offset++] = chess.turn() === 'w' ? 1 : 0;
-
-            return tf.tensor2d([input], [1, 896]);
-        }
-
-        function createEnhancedModel() {
-            const model = tf.sequential();
-            
-            model.add(tf.layers.dense({ 
-                units: 256, 
-                activation: 'relu', 
-                inputShape: [896],
-                kernelRegularizer: tf.regularizers.l2({ l2: 0.0001 })
-            }));
-            model.add(tf.layers.dropout({ rate: 0.3 }));
-            
-            model.add(tf.layers.dense({ 
-                units: 256, 
-                activation: 'relu',
-                kernelRegularizer: tf.regularizers.l2({ l2: 0.0001 })
-            }));
-            model.add(tf.layers.dropout({ rate: 0.3 }));
-            
-            model.add(tf.layers.dense({ 
-                units: 128, 
-                activation: 'relu',
-                kernelRegularizer: tf.regularizers.l2({ l2: 0.0001 })
-            }));
-            model.add(tf.layers.dropout({ rate: 0.2 }));
-            
-            model.add(tf.layers.dense({ 
-                units: 64, 
-                activation: 'relu'
-            }));
-            
-            model.add(tf.layers.dense({ units: 1, activation: 'tanh' }));
-            
-            model.compile({ 
-                optimizer: tf.train.adam(0.0005),
-                loss: 'meanSquaredError',
-                metrics: ['mae']
-            });
-            
-            return model;
-        }
-
-        // ---- MODEL PERSISTENCE: localStorage only; Firestore only stores tiny metadata ----
-
-        async function saveModelToFirestore(model, generation) {
-            try {
-                updateAIState("Saving brain...");
-                
-                // Save model to browser localStorage
-                await model.save("localstorage://chess-ai-model-v2");
-
-                // Store only small metadata in Firestore (no weights, no blobs)
-                const metaRef = doc(db, "artifacts", appId, "public", "data", "model", "current");
-                await setDoc(metaRef, {
-                    generation,
-                    timestamp: Date.now()
-                }, { merge: true });
-
-                console.log(`Model gen ${generation} saved locally; metadata stored in Firestore.`);
+        // anonymous auth to satisfy isSignedIn() in your rules
+        authReadyPromise = firebase.auth().signInAnonymously()
+            .then(() => {
+                console.log('Signed in anonymously to Firebase');
                 return true;
-            } catch (e) {
-                console.error("Model save failed:", e);
+            })
+            .catch(err => {
+                console.warn('Firebase anonymous auth failed:', err);
                 return false;
-            }
+            });
+    }
+
+    function getModelDocRef() {
+        if (!db) return null;
+        return db
+            .collection('artifacts')
+            .doc(FIRESTORE_APP_ID)
+            .collection('public')
+            .doc('data')
+            .collection('hive_memory')
+            .doc(FIRESTORE_MODEL_SLOT_ID);
+    }
+
+    // --- Utility: base64 <-> ArrayBuffer ---
+    function arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
         }
+        return btoa(binary);
+    }
 
-        async function loadModelFromFirestore() {
-            try {
-                updateAIState("Loading brain...");
+    function base64ToArrayBuffer(base64) {
+        const binary = atob(base64);
+        const len = binary.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
 
-                // Try to read metadata (optional – mainly for generation display)
-                const metaRef = doc(db, "artifacts", appId, "public", "data", "model", "current");
-                const metaSnap = await getDoc(metaRef);
-                if (metaSnap.exists()) {
-                    modelGeneration = metaSnap.data().generation || 0;
-                }
+    function updateTrainingStatus(msg) {
+        trainingStatusEl.textContent = 'Training: ' + msg;
+    }
 
-                // Load the actual model from localStorage
-                const model = await tf.loadLayersModel("localstorage://chess-ai-model-v2");
-                model.compile({
-                    optimizer: tf.train.adam(0.0005),
-                    loss: "meanSquaredError",
-                    metrics: ["mae"]
-                });
-                console.log("Loaded model from localStorage");
-                return model;
-            } catch (e) {
-                console.log("No local model found, will create a new one.");
+    // --- Replay buffer (localStorage) ---
+    function loadReplayBuffer() {
+        try {
+            const raw = localStorage.getItem(REPLAY_KEY);
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            console.warn('Failed to load replay buffer', e);
+            return [];
+        }
+    }
+
+    function saveReplayBuffer() {
+        try {
+            const trimmed = replayBuffer.slice(-MAX_REPLAY_SIZE);
+            localStorage.setItem(REPLAY_KEY, JSON.stringify(trimmed));
+        } catch (e) {
+            console.warn('Failed to save replay buffer', e);
+        }
+    }
+
+    function addSamplesToReplay(samples) {
+        replayBuffer.push(...samples);
+        if (replayBuffer.length > MAX_REPLAY_SIZE) {
+            replayBuffer = replayBuffer.slice(replayBuffer.length - MAX_REPLAY_SIZE);
+        }
+        saveReplayBuffer();
+    }
+
+    function loadGamesPlayed() {
+        const raw = localStorage.getItem(GAMES_PLAYED_KEY);
+        return raw ? parseInt(raw, 10) || 0 : 0;
+    }
+
+    function saveGamesPlayed() {
+        localStorage.setItem(GAMES_PLAYED_KEY, String(gamesPlayed));
+    }
+
+    // --- Model creation ---
+    function createModel() {
+        const m = tf.sequential();
+        m.add(tf.layers.dense({
+            units: 256,
+            inputShape: [768],
+            activation: 'relu'
+        }));
+        m.add(tf.layers.dense({
+            units: 128,
+            activation: 'relu'
+        }));
+        m.add(tf.layers.dense({
+            units: 1,
+            activation: 'tanh'
+        }));
+        m.compile({
+            optimizer: tf.train.adam(0.001),
+            loss: 'meanSquaredError'
+        });
+        return m;
+    }
+
+    // --- Serialize/deserialize model for Firestore ---
+    async function serializeModelForFirestore() {
+        const topology = model.toJSON(null, false); // pure JSON, no weights
+        const weights = model.getWeights();
+        const {data, specs} = await tf.io.encodeWeights(weights);
+        const base64 = arrayBufferToBase64(data.buffer);
+        return {
+            modelTopology: topology,
+            weightSpecs: specs,
+            weightDataBase64: base64,
+            updatedAt: new Date().toISOString()
+        };
+    }
+
+    async function loadModelFromFirestore() {
+        if (!db) return null;
+        try {
+            const docRef = getModelDocRef();
+            const snap = await docRef.get();
+            if (!snap.exists) return null;
+            const data = snap.data();
+            if (!data || !data.modelTopology || !data.weightSpecs || !data.weightDataBase64) {
                 return null;
             }
+
+            const modelTopology = data.modelTopology;
+            const weightSpecs = data.weightSpecs;
+            const buffer = base64ToArrayBuffer(data.weightDataBase64);
+
+            const weightMap = await tf.io.decodeWeights(buffer, weightSpecs);
+            const loaded = await tf.models.modelFromJSON(modelTopology);
+            loaded.compile({
+                optimizer: tf.train.adam(0.001),
+                loss: 'meanSquaredError'
+            });
+
+            // preserve order of weights
+            const tensors = weightSpecs.map(spec => weightMap[spec.name]);
+            loaded.setWeights(tensors);
+            Object.values(weightMap).forEach(t => t.dispose());
+
+            console.log('Loaded model from Firestore');
+            return loaded;
+        } catch (e) {
+            console.warn('Failed to load model from Firestore', e);
+            return null;
+        }
+    }
+
+    async function saveModelToFirestore() {
+        if (!db) {
+            console.warn('No Firestore instance; skipping Firestore save.');
+            return;
+        }
+        try {
+            const docRef = getModelDocRef();
+            const payload = await serializeModelForFirestore();
+            await docRef.set(payload);
+            console.log('Model saved to Firestore');
+        } catch (e) {
+            console.warn('Failed to save model to Firestore', e);
+        }
+    }
+
+    // --- Local TF.js model save/load (localStorage cache) ---
+    async function loadModelFromLocalStorage() {
+        try {
+            const models = await tf.io.listModels();
+            if (models[LOCAL_MODEL_KEY]) {
+                const m = await tf.loadLayersModel(LOCAL_MODEL_KEY);
+                console.log('Loaded model from localStorage');
+                return m;
+            }
+        } catch (e) {
+            console.warn('Failed to load model from localStorage', e);
+        }
+        return null;
+    }
+
+    async function saveModelToLocalStorage() {
+        try {
+            await model.save(LOCAL_MODEL_KEY);
+            console.log('Model cached in localStorage');
+        } catch (e) {
+            console.warn('Failed to save model to localStorage', e);
+        }
+    }
+
+    async function saveModel() {
+        updateTrainingStatus('saving to Firestore + local cache…');
+        await saveModelToFirestore();
+        await saveModelToLocalStorage();
+        updateTrainingStatus('done (saved to Firestore + localStorage).');
+    }
+
+    async function loadOrCreateModel() {
+        // 1. Try Firestore (global hive model)
+        statusEl.textContent = 'Checking Firestore for existing AI model…';
+        const fromFirestore = await loadModelFromFirestore();
+        if (fromFirestore) {
+            statusEl.textContent = 'Loaded AI model from Firestore.';
+            return fromFirestore;
         }
 
-        async function initModel() {
-            try {
-                aiModel = await loadModelFromFirestore();
-                
-                if (aiModel) {
-                    updateAIState("Ready (Local Brain)");
-                    return;
-                }
-                
-                console.log("Creating new model");
-                aiModel = createEnhancedModel();
-                modelGeneration = (modelGeneration || 0) + 1;
-                await saveModelToFirestore(aiModel, modelGeneration);
-                updateAIState("Ready (New Brain)");
-            } catch (e) {
-                console.error("Model init failed:", e);
-                aiModel = createEnhancedModel();
-                updateAIState("Ready");
-            }
+        // 2. Try localStorage cache
+        statusEl.textContent = 'No Firestore model. Checking local cache…';
+        const fromLocal = await loadModelFromLocalStorage();
+        if (fromLocal) {
+            statusEl.textContent = 'Loaded AI model from local cache.';
+            return fromLocal;
         }
 
-        async function evaluateBoard(fen) {
-            const chess = new Chess(fen);
-            
-            let material = 0;
-            const board = chess.board();
-            for (let row of board) {
-                for (let p of row) {
-                    if (p) {
-                        const val = PIECE_VALUES[p.type] || 0;
-                        material += (p.color === 'w' ? val : -val);
-                    }
-                }
-            }
-            
-            let centerControl = 0;
-            const centerSquares = ['d4', 'd5', 'e4', 'e5'];
-            for (const sq of centerSquares) {
-                const piece = chess.get(sq);
-                if (piece) {
-                    const value = piece.type === 'p' ? 0.5 : 1;
-                    centerControl += piece.color === 'w' ? value : -value;
-                }
-            }
-            
-            let whiteMoves = chess.moves().length;
-            const fenParts = fen.split(' ');
-            fenParts[1] = 'b';
-            let blackMoves = 0;
-            try {
-                chess.load(fenParts.join(' '));
-                blackMoves = chess.moves().length;
-            } catch(e) {
-                blackMoves = 0;
-            }
-            chess.load(fen);
-            const mobility = (whiteMoves - blackMoves) / 20.0;
-            
-            const heuristic = Math.tanh(
-                (material / 20.0) + 
-                (centerControl / 4.0) + 
-                (mobility * 0.3)
-            );
+        // 3. Fresh model
+        statusEl.textContent = 'No saved model found. Creating a fresh AI…';
+        const fresh = createModel();
+        statusEl.textContent = 'Fresh model ready. Play to train it.';
+        return fresh;
+    }
 
-            const tensor = boardToTensor(fen);
-            const prediction = aiModel.predict(tensor);
-            const nnValue = (await prediction.data())[0];
-            tensor.dispose();
-            prediction.dispose();
+    async function resetModelAndData() {
+        if (!confirm('Reset AI model and all training data? This cannot be undone.')) return;
 
-            return (heuristic * 0.4) + (nnValue * 0.6);
+        // Clear Firestore doc
+        try {
+            const docRef = getModelDocRef();
+            if (docRef) {
+                await docRef.delete();
+                console.log('Deleted model doc from Firestore');
+            }
+        } catch (e) {
+            console.warn('Failed to delete Firestore model doc', e);
         }
 
-        async function runMCTS(rootState, simulations) {
-            const root = new MCTSNode(rootState);
-            
-            for (let i = 0; i < simulations; i++) {
-                let node = root;
-                const simGame = new Chess(rootState.fen());
-                
-                while (node.isFullyExpanded() && node.children.length > 0) {
-                    node = node.bestChild();
-                    simGame.move(node.move);
-                }
-                
-                if (!node.gameState.game_over() && node.untriedMoves.length > 0) {
-                    node = node.expand();
-                    simGame.load(node.gameState.fen());
-                }
-                
-                let value = 0;
-                if (simGame.game_over()) {
-                    if (simGame.in_checkmate()) {
-                        value = simGame.turn() === 'w' ? -1 : 1;
-                    } else {
-                        value = 0;
-                    }
-                } else {
-                    value = await evaluateBoard(simGame.fen());
-                }
-                
-                while (node !== null) {
-                    node.visits++;
-                    node.value += value;
-                    node = node.parent;
-                    value = -value;
-                }
-            }
-            
-            if (root.children.length === 0) return null;
-            
-            return root.children.reduce((best, child) => 
-                child.visits > best.visits ? child : best
-            ).move;
+        // Clear localStorage cache + replay
+        try {
+            await tf.io.removeModel(LOCAL_MODEL_KEY);
+        } catch (e) {
+            console.warn('No localStorage model to remove or failed to remove', e);
         }
+        localStorage.removeItem(REPLAY_KEY);
+        localStorage.removeItem(GAMES_PLAYED_KEY);
 
-        async function getBestMove(depth) {
-            const moves = game.moves({ verbose: true });
-            if (moves.length === 0) return null;
+        replayBuffer = [];
+        gamesPlayed = 0;
+        model = createModel();
+        updateTrainingStatus('AI reset. Fresh model with no training data.');
+        statusEl.textContent = 'AI reset. New game started with fresh model.';
+        newGame(true);
+    }
 
-            updateAIState("Thinking...");
+    // --- Board / UI ---
+    const UNICODE_PIECES = {
+        'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚',
+        'P': '♙', 'R': '♖', 'N': '♘', 'B': '♗', 'Q': '♕', 'K': '♔'
+    };
 
-            const move = await runMCTS(game, MCTS_SIMULATIONS);
-            
-            if (move) {
-                const value = await evaluateBoard(game.fen());
-                const confEl = document.getElementById('ai-confidence');
-                if (confEl) confEl.textContent = value.toFixed(3);
-            }
-            
-            return move;
-        }
-
-        async function uploadToHive(gameDataArray) {
-            try {
-                if (!auth.currentUser) return;
-                const slotId = `slot_${Math.floor(Math.random() * HIVE_SLOTS)}`;
-                const slotRef = doc(db, 'artifacts', appId, 'public', 'data', 'hive_memory', slotId);
-                
-                await setDoc(slotRef, {
-                    games: gameDataArray,
-                    timestamp: Date.now(),
-                    contributor: auth.currentUser.uid
-                });
-                console.log("Contributed to Hive Mind:", slotId);
-            } catch (e) {
-                console.error("Hive upload failed:", e);
+    function createBoardSquares() {
+        boardEl.innerHTML = '';
+        for (let rank = 8; rank >= 1; rank--) {
+            for (let file = 0; file < 8; file++) {
+                const fileChar = String.fromCharCode('a'.charCodeAt(0) + file);
+                const squareName = fileChar + rank;
+                const square = document.createElement('div');
+                square.classList.add('square');
+                const isLight = (file + rank) % 2 === 0;
+                square.classList.add(isLight ? 'light' : 'dark');
+                square.dataset.square = squareName;
+                boardEl.appendChild(square);
             }
         }
+    }
 
-        async function fetchHiveMemories() {
-            try {
-                if (!auth.currentUser) return [];
-                updateAIState("Syncing with Hive...");
-                
-                const hiveRef = collection(db, 'artifacts', appId, 'public', 'data', 'hive_memory');
-                const snapshot = await getDocs(hiveRef);
-                
-                let collectiveMemories = [];
-                snapshot.forEach(docSnap => {
-                    const data = docSnap.data();
-                    if (data.games && Array.isArray(data.games)) {
-                        collectiveMemories = [...collectiveMemories, ...data.games];
-                    }
-                });
-                
-                console.log(`Downloaded ${collectiveMemories.length} positions from Hive.`);
-                return collectiveMemories;
-            } catch (e) {
-                console.error("Hive sync failed:", e);
-                return [];
-            }
+    function renderBoard() {
+        const squares = boardEl.querySelectorAll('.square');
+        squares.forEach((square) => {
+            const sq = square.dataset.square;
+            const piece = chess.get(sq);
+            square.textContent = piece ? UNICODE_PIECES[(piece.color === 'w' ? piece.type.toUpperCase() : piece.type)] || '' : '';
+            square.classList.remove('selected', 'highlight');
+        });
+
+        if (selectedSquare) {
+            const selectedEl = boardEl.querySelector(`[data-square="${selectedSquare}"]`);
+            if (selectedEl) selectedEl.classList.add('selected');
+            const moves = chess.moves({ square: selectedSquare, verbose: true });
+            moves.forEach(m => {
+                const targetEl = boardEl.querySelector(`[data-square="${m.to}"]`);
+                if (targetEl) targetEl.classList.add('highlight');
+            });
         }
+    }
 
-        async function trainModel() {
-            if (isTraining) return;
-            
-            isTraining = true;
-            updateAIState("Training...");
-            
-            const overlay = document.getElementById('board-overlay');
-            const trainingInd = document.getElementById('training-indicator');
-            const msg = document.getElementById('overlay-msg');
-            const title = document.getElementById('overlay-title');
-            
-            overlay.classList.remove('hidden');
-            trainingInd.classList.remove('hidden');
-            title.textContent = "Hive Learning";
-            msg.textContent = "Community threshold reached. Upgrading brain...";
-            document.getElementById('btn-overlay-new').classList.add('hidden');
+    function onSquareClick(event) {
+        if (isAiThinking) return;
+        const target = event.target.closest('.square');
+        if (!target) return;
+        const square = target.dataset.square;
+        if (!square) return;
 
-            const communityGames = await fetchHiveMemories();
-            const trainingSet = [...gameHistory, ...communityGames];
-            msg.textContent = `Processing ${trainingSet.length} positions...`;
+        if (chess.turn() !== 'w') return;
+        const piece = chess.get(square);
 
-            if (trainingSet.length === 0) {
-                finishTraining(overlay, trainingInd);
+        if (!selectedSquare) {
+            if (!piece || piece.color !== 'w') return;
+            selectedSquare = square;
+        } else {
+            if (square === selectedSquare) {
+                selectedSquare = null;
+                renderBoard();
                 return;
             }
-
-            const inputs = [];
-            const labels = [];
-            const MAX_TRAINING_SAMPLES = 600;
-            const shuffled = trainingSet.sort(() => 0.5 - Math.random()).slice(0, MAX_TRAINING_SAMPLES);
-
-            for (const record of shuffled) {
-                const t = boardToTensor(record.fen);
-                const d = await t.data();
-                inputs.push(Array.from(d));
-                labels.push(record.value);
-                t.dispose();
+            const move = chess.move({
+                from: selectedSquare,
+                to: square,
+                promotion: 'q'
+            });
+            selectedSquare = null;
+            if (move) {
+                renderBoard();
+                updateStatus();
+                if (!chess.game_over()) {
+                    setTimeout(aiMove, 200);
+                } else {
+                    handleGameOver();
+                }
+                return;
             }
+        }
+        renderBoard();
+    }
 
-            const inputTensor = tf.tensor2d(inputs, [inputs.length, 896]);
-            const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
+    function updateStatus() {
+        if (chess.game_over()) {
+            if (chess.in_checkmate()) {
+                const winner = chess.turn() === 'w' ? 'Black (AI)' : 'White (You)';
+                statusEl.textContent = 'Checkmate! Winner: ' + winner;
+            } else if (chess.in_draw()) {
+                statusEl.textContent = 'Game over: Draw.';
+            } else {
+                statusEl.textContent = 'Game over.';
+            }
+        } else {
+            const turn = chess.turn() === 'w' ? 'White (You)' : 'Black (AI)';
+            statusEl.textContent = 'Turn: ' + turn;
+        }
+    }
 
-            await aiModel.fit(inputTensor, labelTensor, {
-                epochs: 20,
+    function newGame(skipStatus) {
+        chess.reset();
+        currentGameStates = [];
+        selectedSquare = null;
+        renderBoard();
+        if (!skipStatus) {
+            statusEl.textContent = 'New game started. You are White.';
+        }
+        updateStatus();
+    }
+
+    // --- Encoding board (12x8x8 = 768) ---
+    function encodeBoardForColor(chessInstance, perspectiveColor) {
+        const board = chessInstance.board();
+        const planes = 12;
+        const size = 8 * 8 * planes;
+        const arr = new Array(size).fill(0);
+
+        function typeToIndex(type) {
+            switch (type) {
+                case 'p': return 0;
+                case 'n': return 1;
+                case 'b': return 2;
+                case 'r': return 3;
+                case 'q': return 4;
+                case 'k': return 5;
+                default: return null;
+            }
+        }
+
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const piece = board[r][c];
+                if (!piece) continue;
+                const tIdx = typeToIndex(piece.type);
+                if (tIdx === null) continue;
+                const isWhitePiece = piece.color === 'w';
+                let planeIndex;
+                if (perspectiveColor === 'w') {
+                    planeIndex = isWhitePiece ? tIdx : 6 + tIdx;
+                } else {
+                    planeIndex = isWhitePiece ? 6 + tIdx : tIdx;
+                }
+                const idx = planeIndex * 64 + r * 8 + c;
+                arr[idx] = 1;
+            }
+        }
+        return arr;
+    }
+
+    // --- AI move ---
+    async function aiMove() {
+        if (isAiThinking) return;
+        if (chess.game_over()) {
+            handleGameOver();
+            return;
+        }
+        if (chess.turn() !== AI_COLOR) return;
+
+        const moves = chess.moves({ verbose: true });
+        if (moves.length === 0) {
+            handleGameOver();
+            return;
+        }
+
+        isAiThinking = true;
+        statusEl.textContent = 'AI is thinking…';
+
+        currentGameStates.push(encodeBoardForColor(chess, AI_COLOR));
+
+        const encodedPositions = [];
+        const originalFen = chess.fen();
+
+        for (const mv of moves) {
+            chess.move(mv);
+            encodedPositions.push(encodeBoardForColor(chess, AI_COLOR));
+            chess.load(originalFen);
+        }
+
+        const xs = tf.tensor2d(encodedPositions);
+        const preds = model.predict(xs);
+        const values = await preds.data();
+        xs.dispose();
+        preds.dispose();
+
+        let chosenIndex;
+        if (Math.random() < EXPLORATION_EPSILON) {
+            chosenIndex = Math.floor(Math.random() * moves.length);
+        } else {
+            let bestVal = -Infinity;
+            chosenIndex = 0;
+            for (let i = 0; i < values.length; i++) {
+                if (values[i] > bestVal) {
+                    bestVal = values[i];
+                    chosenIndex = i;
+                }
+            }
+        }
+
+        const chosenMove = moves[chosenIndex];
+        chess.move(chosenMove);
+        renderBoard();
+        updateStatus();
+
+        isAiThinking = false;
+
+        if (chess.game_over()) {
+            handleGameOver();
+        }
+    }
+
+    // --- Game end & training ---
+    function handleGameOver() {
+        let result = 0;
+        if (chess.in_checkmate()) {
+            const sideToMove = chess.turn();
+            const aiWon = (sideToMove !== AI_COLOR);
+            result = aiWon ? 1 : -1;
+        } else if (chess.in_draw() || chess.in_stalemate() ||
+            chess.in_threefold_repetition() || chess.insufficient_material()) {
+            result = 0;
+        }
+
+        const samples = currentGameStates.map(stateVec => ({
+            state: stateVec,
+            value: result
+        }));
+        addSamplesToReplay(samples);
+        currentGameStates = [];
+
+        gamesPlayed += 1;
+        saveGamesPlayed();
+
+        statusEl.textContent += `  |  Game result (from AI perspective): ${result > 0 ? 'Win' : result < 0 ? 'Loss' : 'Draw'}. Games played: ${gamesPlayed}`;
+
+        if (gamesPlayed > 0 && gamesPlayed % GAMES_PER_TRAIN === 0) {
+            trainFromReplayBuffer();
+        }
+    }
+
+    async function trainFromReplayBuffer() {
+        if (replayBuffer.length < MIN_SAMPLES_FOR_TRAINING) {
+            updateTrainingStatus(`not enough samples yet (${replayBuffer.length}/${MIN_SAMPLES_FOR_TRAINING}).`);
+            return;
+        }
+
+        const maxBatch = Math.min(512, replayBuffer.length);
+        const indices = tf.util.createShuffledIndices(replayBuffer.length).slice(0, maxBatch);
+        const xsArr = [];
+        const ysArr = [];
+
+        for (const idx of indices) {
+            xsArr.push(replayBuffer[idx].state);
+            ysArr.push(replayBuffer[idx].value);
+        }
+
+        const xs = tf.tensor2d(xsArr);
+        const ys = tf.tensor2d(ysArr, [ysArr.length, 1]);
+
+        updateTrainingStatus(`training on ${maxBatch} positions (5 epochs)…`);
+        try {
+            await model.fit(xs, ys, {
+                epochs: 5,
                 batchSize: 32,
                 shuffle: true,
-                validationSplit: 0.1,
-                callbacks: {
-                    onEpochEnd: (epoch, logs) => {
-                        console.log(`Epoch ${epoch + 1}: loss=${logs.loss.toFixed(4)}, val_loss=${logs.val_loss.toFixed(4)}`);
-                        msg.textContent = `Training Epoch ${epoch + 1}/20 - Loss: ${logs.loss.toFixed(4)}`;
-                    }
-                }
+                verbose: 0
             });
+            xs.dispose();
+            ys.dispose();
+            await saveModel();
+        } catch (e) {
+            console.error('Training error', e);
+            updateTrainingStatus('error during training (see console).');
+            xs.dispose();
+            ys.dispose();
+        }
+    }
 
-            inputTensor.dispose();
-            labelTensor.dispose();
+    // --- Init ---
+    async function init() {
+        createBoardSquares();
+        chess = new Chess();
+        boardEl.addEventListener('click', onSquareClick);
 
-            modelGeneration++;
-            msg.textContent = "Saving model...";
-            await saveModelToFirestore(aiModel, modelGeneration);
+        initFirebase();
+        replayBuffer = loadReplayBuffer();
+        gamesPlayed = loadGamesPlayed();
 
-            finishTraining(overlay, trainingInd);
+        // Wait (best effort) for Firebase auth before model fetch
+        if (authReadyPromise) {
+            await authReadyPromise;
         }
 
-        function finishTraining(overlay, trainingInd) {
-            isTraining = false;
-            trainingPending = false;
-            updateAIState("Ready");
-            
-            trainingInd.classList.add('hidden');
-            document.getElementById('btn-overlay-new').classList.remove('hidden');
-            document.getElementById('overlay-msg').textContent = "Training complete! I've learned from the community.";
-        }
+        model = await loadOrCreateModel();
+        renderBoard();
+        updateStatus();
+        updateTrainingStatus(`idle. Replay buffer size: ${replayBuffer.length}, games played: ${gamesPlayed}.`);
+    }
 
-        function checkAndTriggerTraining() {
-            if (trainingPending && !isTraining) {
-                console.log("Triggering training...");
-                trainModel();
-            }
-        }
+    document.getElementById('newGameBtn').addEventListener('click', () => newGame());
+    document.getElementById('resetAIButton').addEventListener('click', resetModelAndData);
 
-        const PIECE_UNICODE = {
-            'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚',
-            'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔'
-        };
-
-        const PIECE_FONTAWESOME = {
-            'p': 'fa-chess-pawn', 'n': 'fa-chess-knight', 'b': 'fa-chess-bishop', 
-            'r': 'fa-chess-rook', 'q': 'fa-chess-queen', 'k': 'fa-chess-king',
-            'P': 'fa-chess-pawn', 'N': 'fa-chess-knight', 'B': 'fa-chess-bishop', 
-            'R': 'fa-chess-rook', 'Q': 'fa-chess-queen', 'K': 'fa-chess-king'
-        };
-
-        let iconStyle = localStorage.getItem('chess-icon-style') || 'unicode';
-
-        function renderBoard() {
-            const boardEl = document.getElementById('chessboard');
-            boardEl.innerHTML = '';
-            const boardState = game.board();
-            
-            if (game.game_over()) {
-                handleGameOver();
-            }
-
-            let isWhiteSq = true;
-            for (let i = 0; i < 8; i++) {
-                for (let j = 0; j < 8; j++) {
-                    const squareCode = String.fromCharCode('a'.charCodeAt(0) + j) + (8 - i);
-                    const squareDiv = document.createElement('div');
-                    
-                    let baseClass = "w-full h-full flex items-center justify-center text-4xl sm:text-5xl select-none square relative";
-                    let colorClass = isWhiteSq ? "bg-[#ebecd0] text-black" : "bg-[#779556] text-black";
-                    
-                    const history = game.history({ verbose: true });
-                    if (history.length > 0) {
-                        const last = history[history.length - 1];
-                        if (last.from === squareCode || last.to === squareCode) {
-                            colorClass = isWhiteSq ? "bg-[#f5f682]" : "bg-[#baca44]";
-                        }
-                    }
-
-                    if (selectedSquare === squareCode) {
-                        colorClass = "bg-[#bbc456]";
-                    }
-
-                    squareDiv.className = `${baseClass} ${colorClass}`;
-                    squareDiv.dataset.square = squareCode;
-                    squareDiv.onclick = () => onSquareClick(squareCode);
-
-                    const piece = boardState[i][j];
-                    if (piece) {
-                        const pieceSpan = document.createElement('span');
-                        const pieceKey = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
-                        
-                        if (iconStyle === 'fontawesome') {
-                            const iconClass = PIECE_FONTAWESOME[pieceKey] || PIECE_FONTAWESOME[piece.type];
-                            pieceSpan.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
-                            pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
-                            if (piece.color === 'w') {
-                                pieceSpan.style.color = '#fff';
-                                pieceSpan.style.textShadow = '0 0 2px #000';
-                            } else {
-                                pieceSpan.style.color = '#000';
-                                pieceSpan.style.textShadow = '0 0 1px #fff';
-                            }
-                        } else {
-                            pieceSpan.textContent = PIECE_UNICODE[pieceKey] || PIECE_UNICODE[piece.type];
-                            pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
-                            if (piece.color === 'w') {
-                                pieceSpan.style.color = '#fff';
-                                pieceSpan.style.textShadow = '0 0 2px #000';
-                            } else {
-                                pieceSpan.style.color = '#000';
-                                pieceSpan.style.textShadow = '0 0 1px #fff';
-                            }
-                        }
-                        squareDiv.appendChild(pieceSpan);
-                    }
-                    
-                    if (selectedSquare) {
-                        const moves = game.moves({ square: selectedSquare, verbose: true });
-                        const isMove = moves.find(m => m.to === squareCode);
-                        if (isMove) {
-                            const hint = document.createElement('div');
-                            hint.className = isMove.captured 
-                                ? "absolute inset-0 border-4 border-red-400/50 rounded-full scale-90" 
-                                : "absolute w-3 h-3 bg-black/20 rounded-full";
-                            squareDiv.appendChild(hint);
-                        }
-                    }
-
-                    boardEl.appendChild(squareDiv);
-                    isWhiteSq = !isWhiteSq;
-                }
-                isWhiteSq = !isWhiteSq;
-            }
-            updateStatus();
-        }
-
-        async function onSquareClick(square) {
-            if (isTraining) return;
-            if (game.turn() === 'b' && !game.game_over()) return;
-
-            if (selectedSquare === square) {
-                selectedSquare = null;
-                renderBoard();
-                return;
-            }
-
-            if (selectedSquare) {
-                const move = game.move({
-                    from: selectedSquare,
-                    to: square,
-                    promotion: 'q'
-                });
-
-                if (move) {
-                    selectedSquare = null;
-                    renderBoard();
-                    if (!game.game_over()) {
-                        setTimeout(makeAIMove, 200);
-                    }
-                } else {
-                    const piece = game.get(square);
-                    if (piece && piece.color === game.turn()) {
-                        selectedSquare = square;
-                        renderBoard();
-                    } else {
-                        selectedSquare = null;
-                        renderBoard();
-                    }
-                }
-            } else {
-                const piece = game.get(square);
-                if (piece && piece.color === game.turn()) {
-                    selectedSquare = square;
-                    renderBoard();
-                }
-            }
-        }
-
-        async function makeAIMove() {
-            if (game.game_over()) return;
-            
-            updateAIState("Thinking...");
-            updateStatus("AI is thinking...");
-            
-            setTimeout(async () => {
-                const move = await getBestMove(2);
-                if (move) {
-                    game.move(move);
-                    renderBoard();
-                    updateAIState("Ready");
-                }
-            }, 10);
-        }
-
-        function updateStatus(msg) {
-            const statusEl = document.getElementById('game-status');
-            if (msg) {
-                statusEl.innerHTML = `<span class="w-3 h-3 rounded-full bg-yellow-500 animate-pulse"></span><span>${msg}</span>`;
-                return;
-            }
-            
-            if (game.turn() === 'w') {
-                statusEl.innerHTML = `<span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span><span>Your Turn (White)</span>`;
-            } else {
-                statusEl.innerHTML = `<span class="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span><span>AI Turn (Black)</span>`;
-            }
-        }
-
-        function updateAIState(text) {
-            document.getElementById('ai-state').textContent = text;
-        }
-
-        function recordGameData(result) {
-            const tempGame = new Chess();
-            const history = game.history();
-            
-            let currentGamePositions = [];
-            
-            const positions = [];
-            history.forEach(move => {
-                positions.push(tempGame.fen());
-                tempGame.move(move);
-            });
-            positions.push(tempGame.fen());
-            
-            const values = [];
-            let currentValue = result;
-            
-            for (let i = positions.length - 1; i >= 0; i--) {
-                values[i] = currentValue;
-                currentValue = currentValue * GAMMA;
-            }
-            
-            for (let i = 0; i < positions.length; i++) {
-                currentGamePositions.push({
-                    fen: positions[i],
-                    value: values[i]
-                });
-            }
-            
-            gameHistory = [...gameHistory, ...currentGamePositions];
-            uploadToHive(currentGamePositions);
-            incrementGlobalStats();
-        }
-
-        function updateGlobalProgressUI(globalCount) {
-            const batchProgress = globalCount % GAMES_PER_TRAINING;
-            const percent = Math.min(100, (batchProgress / GAMES_PER_TRAINING) * 100);
-            
-            document.getElementById('local-games-count').textContent = `${batchProgress} / ${GAMES_PER_TRAINING}`;
-            document.getElementById('training-progress').style.width = `${percent}%`;
-            document.getElementById('buffer-percent').textContent = `${Math.floor(percent)}%`;
-        }
-
-        async function handleGameOver() {
-            let msg = "";
-            let result = 0;
-
-            if (game.in_checkmate()) {
-                if (game.turn() === 'w') {
-                    msg = "Checkmate! AI (Black) Wins!";
-                    result = -1;
-                } else {
-                    msg = "Checkmate! You (White) Win!";
-                    result = 1;
-                }
-            } else if (game.in_draw()) {
-                msg = "Draw!";
-                result = 0;
-            } else {
-                msg = "Game Over";
-            }
-
-            document.getElementById('overlay-msg').textContent = msg;
-            document.getElementById('board-overlay').classList.remove('hidden');
-            document.getElementById('training-indicator').classList.add('hidden');
-            document.getElementById('overlay-title').textContent = "Game Finished";
-            
-            recordGameData(result);
-            checkAndTriggerTraining();
-        }
-        
-        async function initApp() {
-            try {
-                await signInAnonymously(auth);
-                
-                const statsRef = doc(db, 'artifacts', appId, 'public', 'data', 'chess_stats', 'global');
-                
-                onSnapshot(statsRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        const currentCount = data.gamesPlayed || 0;
-                        
-                        document.getElementById('global-counter').textContent = currentCount.toLocaleString();
-                        updateGlobalProgressUI(currentCount);
-                        
-                        if (lastGlobalCount === -1) {
-                            lastGlobalCount = currentCount;
-                        }
-
-                        const lastBatch = Math.floor(lastGlobalCount / GAMES_PER_TRAINING);
-                        const currentBatch = Math.floor(currentCount / GAMES_PER_TRAINING);
-
-                        if (currentBatch > lastBatch) {
-                            console.log("Global batch complete! Training pending...");
-                            trainingPending = true;
-                            
-                            if (game.game_over() || game.history().length === 0) {
-                                checkAndTriggerTraining();
-                            }
-                        }
-                        
-                        lastGlobalCount = currentCount;
-
-                    } else {
-                         setDoc(statsRef, { gamesPlayed: 0 }, { merge: true });
-                         document.getElementById('global-counter').textContent = "0";
-                    }
-                }, (error) => {
-                    console.error("Stats listener error:", error);
-                    document.getElementById('global-counter').textContent = "Offline";
-                });
-
-                await initModel();
-                renderBoard();
-            } catch (e) {
-                console.error("Auth/Init failed:", e);
-                document.getElementById('global-counter').textContent = "Offline";
-                await initModel();
-                renderBoard();
-            }
-        }
-
-        async function incrementGlobalStats() {
-             try {
-                if (!auth.currentUser) return;
-                const statsRef = doc(db, 'artifacts', appId, 'public', 'data', 'chess_stats', 'global');
-                await updateDoc(statsRef, {
-                    gamesPlayed: increment(1)
-                });
-             } catch(e) {
-                 console.log("Could not update global stats", e);
-             }
-        }
-
-        const iconStyleSelect = document.getElementById('icon-style');
-        iconStyleSelect.value = iconStyle;
-        iconStyleSelect.addEventListener('change', (e) => {
-            iconStyle = e.target.value;
-            localStorage.setItem('chess-icon-style', iconStyle);
-            renderBoard();
-        });
-
-        document.getElementById('btn-new-game').addEventListener('click', () => {
-            if (trainingPending && !isTraining) {
-                checkAndTriggerTraining();
-            } else {
-                game.reset();
-                selectedSquare = null;
-                renderBoard();
-                document.getElementById('move-history').innerHTML = '';
-                document.getElementById('board-overlay').classList.add('hidden');
-                updateAIState("Ready");
-            }
-        });
-
-        document.getElementById('btn-overlay-new').addEventListener('click', () => {
-            game.reset();
-            selectedSquare = null;
-            renderBoard();
-            document.getElementById('move-history').innerHTML = '';
-            document.getElementById('board-overlay').classList.add('hidden');
-            updateAIState("Ready");
-        });
-
-        document.getElementById('btn-reset-ai').addEventListener('click', async () => {
-            if(confirm("This will wipe the AI's memory and reset its brain. Are you sure?")) {
-                try {
-                    await tf.io.removeModel('localstorage://chess-ai-model-v2');
-                } catch(e) {
-                    console.log("Error removing model:", e);
-                }
-                location.reload();
-            }
-        });
-
-        initApp();
-
-    </script>
+    init();
+</script>
 </body>
 </html>
