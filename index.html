@@ -4,138 +4,164 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Neural Chess - Self Learning AI</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chess.js for game logic -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-    <!-- TensorFlow.js for Machine Learning -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
-    <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     
     <style>
+        * { font-family: 'Space Grotesk', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        
         .chess-piece {
             cursor: pointer;
             user-select: none;
-            transition: transform 0.1s;
+            transition: transform 0.15s ease, filter 0.15s ease;
         }
-        .chess-piece:hover {
-            transform: scale(1.1);
-        }
-        .chess-piece:active {
-            transform: scale(0.95);
-        }
-        .square {
-            transition: background-color 0.2s;
-        }
-        .last-move {
-            background-color: rgba(255, 255, 0, 0.3) !important;
-        }
-        .highlight {
-            background-color: rgba(0, 255, 0, 0.2) !important;
-        }
-        .capture-hint {
-            background-color: rgba(255, 0, 0, 0.2) !important;
-        }
+        .chess-piece:hover { transform: scale(1.08); filter: brightness(1.1); }
+        .chess-piece:active { transform: scale(0.95); }
         
         .loader {
-            border: 3px solid #f3f3f3;
+            border: 3px solid rgba(255, 255, 255, 0.1);
             border-radius: 50%;
-            border-top: 3px solid #3b82f6;
-            width: 20px;
-            height: 20px;
-            animation: spin 1s linear infinite;
+            border-top: 3px solid #8b5cf6;
+            width: 24px;
+            height: 24px;
+            animation: spin 0.8s linear infinite;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.2); border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(139, 92, 246, 0.5); border-radius: 3px; }
+        
+        .board-shadow {
+            box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.3), 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
+        .glow-text { text-shadow: 0 0 20px rgba(139, 92, 246, 0.5); }
+        .status-dot { box-shadow: 0 0 8px currentColor; }
+        
+        @keyframes pulse-hint { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+        .move-hint { animation: pulse-hint 1.5s ease-in-out infinite; }
+        
+        @keyframes fade-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fade-in 0.3s ease-out; }
+        
+        .log-entry { font-size: 10px; padding: 2px 4px; border-radius: 2px; }
+        .log-info { background: rgba(59, 130, 246, 0.2); color: #93c5fd; }
+        .log-success { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+        .log-warn { background: rgba(234, 179, 8, 0.2); color: #fde047; }
+        .log-error { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
     </style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen flex flex-col font-sans">
+<body class="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white min-h-screen flex flex-col">
 
     <!-- Header -->
-    <header class="bg-gray-800 border-b border-gray-700 p-4 shadow-lg">
+    <header class="bg-gray-900/80 backdrop-blur-sm border-b border-purple-500/20 p-4 sticky top-0 z-20">
         <div class="container mx-auto flex justify-between items-center">
             <div class="flex items-center space-x-3">
-                <i class="fa-solid fa-brain text-blue-400 text-2xl"></i>
-                <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-                    NeuralZero Chess
-                </h1>
+                <div class="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-brain text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold glow-text bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400">
+                        NeuralZero Chess
+                    </h1>
+                    <p class="text-xs text-gray-500">Community-Trained AI</p>
+                </div>
             </div>
-            <div class="flex items-center space-x-4 text-sm">
-                <div class="flex flex-col items-end">
-                    <span class="text-gray-400">Global Games</span>
-                    <span id="global-counter" class="font-mono font-bold text-green-400">Connecting...</span>
+            <div class="flex items-center space-x-6">
+                <div class="text-right">
+                    <span class="text-xs text-gray-500 block">Global Games</span>
+                    <span id="global-counter" class="font-mono font-bold text-lg text-green-400">...</span>
+                </div>
+                <div class="text-right">
+                    <span class="text-xs text-gray-500 block">Model Gen</span>
+                    <span id="model-gen" class="font-mono font-bold text-lg text-purple-400">0</span>
                 </div>
             </div>
         </div>
     </header>
 
     <!-- Main Content -->
-    <main class="flex-grow container mx-auto p-4 flex flex-col lg:flex-row gap-6 items-start justify-center">
+    <main class="flex-grow container mx-auto p-4 flex flex-col lg:flex-row gap-6 items-start justify-center py-6">
         
-        <!-- Left Panel: Game Info & Controls -->
-        <div class="w-full lg:w-1/4 space-y-4 order-2 lg:order-1">
+        <!-- Left Panel -->
+        <div class="w-full lg:w-72 space-y-4 order-2 lg:order-1">
             
             <!-- AI Status Card -->
-            <div class="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-lg">
-                <h2 class="text-lg font-semibold mb-3 flex items-center">
-                    <i class="fa-solid fa-microchip mr-2 text-purple-400"></i> AI Status
+            <div class="bg-gray-800/50 backdrop-blur rounded-xl p-5 border border-purple-500/20">
+                <h2 class="text-sm font-semibold mb-4 flex items-center text-purple-300">
+                    <i class="fa-solid fa-microchip mr-2"></i> AI STATUS
                 </h2>
-                <div class="space-y-3 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-gray-400">State</span>
-                        <span id="ai-state" class="text-blue-300 font-medium">Thinking...</span>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400 text-sm">State</span>
+                        <span id="ai-state" class="text-purple-300 font-medium text-sm px-2 py-1 bg-purple-500/10 rounded">Initializing...</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-400">Confidence</span>
-                        <span id="ai-confidence" class="text-gray-200">0.00</span>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400 text-sm">Evaluation</span>
+                        <span id="ai-confidence" class="font-mono text-sm">0.000</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-400">Global Batch</span>
-                        <span id="local-games-count" class="text-gray-200">0 / 2</span>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400 text-sm">Local Games</span>
+                        <span id="local-games" class="font-mono text-sm">0</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400 text-sm">Hive Positions</span>
+                        <span id="hive-positions" class="font-mono text-sm">0</span>
                     </div>
                     
-                    <!-- Training Progress Bar -->
-                    <div class="mt-2">
-                        <div class="flex justify-between text-xs text-gray-500 mb-1">
-                            <span>Community Progress</span>
-                            <span id="buffer-percent">0%</span>
+                    <!-- Training Progress -->
+                    <div>
+                        <div class="flex justify-between text-xs text-gray-500 mb-2">
+                            <span>Training Batch</span>
+                            <span id="buffer-percent">0 / 2</span>
                         </div>
-                        <div class="w-full bg-gray-700 rounded-full h-2">
-                            <div id="training-progress" class="bg-purple-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        <div class="w-full bg-gray-700/50 rounded-full h-2 overflow-hidden">
+                            <div id="training-progress" class="bg-gradient-to-r from-purple-500 to-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <!-- Game Controls -->
-            <div class="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-lg">
-                <h2 class="text-lg font-semibold mb-3">Controls</h2>
-                <div class="flex flex-col space-y-2">
-                    <div class="mb-2">
-                        <label for="icon-style" class="block text-sm text-gray-400 mb-1">Icon Style</label>
-                        <select id="icon-style" class="w-full py-2 px-3 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <option value="unicode">Unicode</option>
+            <div class="bg-gray-800/50 backdrop-blur rounded-xl p-5 border border-gray-700/50">
+                <h2 class="text-sm font-semibold mb-4 text-gray-300">CONTROLS</h2>
+                <div class="flex flex-col space-y-3">
+                    <div>
+                        <label for="icon-style" class="block text-xs text-gray-500 mb-2">Piece Style</label>
+                        <select id="icon-style" class="w-full py-2.5 px-3 bg-gray-700/50 border border-gray-600/50 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition">
+                            <option value="unicode">Unicode Symbols</option>
                             <option value="fontawesome">Font Awesome</option>
                         </select>
                     </div>
-                    <button id="btn-new-game" class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 rounded-lg transition flex items-center justify-center space-x-2">
+                    <button id="btn-new-game" class="w-full py-2.5 px-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 rounded-lg transition font-medium flex items-center justify-center space-x-2 shadow-lg shadow-purple-500/20">
                         <i class="fa-solid fa-arrows-rotate"></i>
                         <span>New Game</span>
                     </button>
-                    <button id="btn-reset-ai" class="w-full py-2 px-4 bg-red-900/50 hover:bg-red-900/80 text-red-200 border border-red-800 rounded-lg transition flex items-center justify-center space-x-2 text-xs">
+                    <button id="btn-force-train" class="w-full py-2.5 px-4 bg-green-700 hover:bg-green-600 rounded-lg transition font-medium flex items-center justify-center space-x-2 text-sm">
+                        <i class="fa-solid fa-graduation-cap"></i>
+                        <span>Force Train Now</span>
+                    </button>
+                    <button id="btn-reset-ai" class="w-full py-2 px-4 bg-red-900/30 hover:bg-red-900/50 text-red-300 border border-red-800/50 rounded-lg transition flex items-center justify-center space-x-2 text-xs">
                         <i class="fa-solid fa-trash"></i>
                         <span>Reset AI Brain</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Instructions -->
-            <div class="bg-gray-800/50 rounded-xl p-4 border border-gray-700 text-xs text-gray-400">
-                <p class="mb-2"><strong class="text-gray-300">Hive Mind Active:</strong></p>
-                <p>The AI is connected to a global database. When <span class="text-white font-bold">2 games</span> are played by the community (you + everyone else), this AI will automatically retrain on the new collective knowledge between games.</p>
+            <!-- Debug Log -->
+            <div class="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50 overflow-hidden">
+                <div class="p-3 border-b border-gray-700/50 font-semibold text-xs flex items-center justify-between">
+                    <span class="text-gray-400">DEBUG LOG</span>
+                    <button id="btn-clear-log" class="text-gray-500 hover:text-white text-xs">Clear</button>
+                </div>
+                <div id="debug-log" class="h-32 overflow-y-auto p-2 space-y-1 font-mono custom-scrollbar text-xs">
+                </div>
             </div>
         </div>
 
@@ -143,43 +169,54 @@
         <div class="w-full lg:w-auto order-1 lg:order-2 flex flex-col items-center">
             
             <!-- Status Bar -->
-            <div id="game-status" class="mb-4 px-4 py-2 bg-gray-800 rounded-full border border-gray-600 text-sm font-medium flex items-center space-x-2">
-                <span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
+            <div id="game-status" class="mb-4 px-5 py-2.5 bg-gray-800/80 backdrop-blur rounded-full border border-gray-600/50 text-sm font-medium flex items-center space-x-3 shadow-lg">
+                <span class="w-2.5 h-2.5 rounded-full bg-green-500 status-dot animate-pulse"></span>
                 <span>Your Turn (White)</span>
             </div>
 
-            <!-- The Board -->
-            <div class="relative p-3 bg-gray-800 rounded-lg shadow-2xl border-4 border-gray-700">
-                <div id="chessboard" class="grid grid-cols-8 grid-rows-8 w-[320px] h-[320px] sm:w-[400px] sm:h-[400px] md:w-[480px] md:h-[480px] bg-[#769656]">
+            <!-- Board Container -->
+            <div class="relative">
+                <div class="absolute -left-6 top-0 bottom-0 flex flex-col justify-around text-gray-500 text-xs font-mono py-1">
+                    <span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
                 </div>
                 
-                <!-- Overlay for Game Over / Training -->
-                <div id="board-overlay" class="hidden absolute inset-0 bg-black/80 z-10 flex flex-col items-center justify-center text-center p-6 backdrop-blur-sm rounded">
-                    <h3 id="overlay-title" class="text-2xl font-bold text-white mb-2">Game Over</h3>
-                    <p id="overlay-msg" class="text-gray-300 mb-4">White wins!</p>
-                    <div id="training-indicator" class="hidden flex flex-col items-center mt-4">
-                        <div class="loader mb-2"></div>
-                        <span class="text-blue-400 text-sm animate-pulse">Neural Network Training...</span>
-                        <span class="text-xs text-gray-500">Optimizing weights based on recent games</span>
+                <div class="relative p-1 bg-gray-800 rounded-xl board-shadow">
+                    <div id="chessboard" class="grid grid-cols-8 grid-rows-8 w-[320px] h-[320px] sm:w-[400px] sm:h-[400px] md:w-[480px] md:h-[480px] rounded-lg overflow-hidden">
                     </div>
-                    <button id="btn-overlay-new" class="mt-4 px-6 py-2 bg-white text-black font-bold rounded-full hover:bg-gray-200 transition">
-                        Play Again
-                    </button>
+                    
+                    <!-- Overlay -->
+                    <div id="board-overlay" class="hidden absolute inset-1 bg-gray-900/95 z-10 flex flex-col items-center justify-center text-center p-6 backdrop-blur-md rounded-lg">
+                        <h3 id="overlay-title" class="text-2xl font-bold text-white mb-2 glow-text">Game Over</h3>
+                        <p id="overlay-msg" class="text-gray-300 mb-6">White wins!</p>
+                        <div id="training-indicator" class="hidden flex flex-col items-center my-4">
+                            <div class="loader mb-3"></div>
+                            <span id="training-status" class="text-purple-400 text-sm font-medium animate-pulse">Training...</span>
+                            <span id="training-detail" class="text-xs text-gray-500 mt-1">Epoch 0/20</span>
+                        </div>
+                        <button id="btn-overlay-new" class="px-8 py-3 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-bold rounded-full transition shadow-lg shadow-purple-500/30">
+                            Play Again
+                        </button>
+                    </div>
                 </div>
-            </div>
-            
-            <!-- Coordinates (Bottom) -->
-            <div class="w-full flex justify-between px-2 mt-1 text-gray-500 text-xs font-mono">
-                <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+                
+                <div class="flex justify-around px-1 mt-2 text-gray-500 text-xs font-mono">
+                    <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+                </div>
             </div>
         </div>
 
-        <!-- Right Panel: Move History / Stats -->
-        <div class="w-full lg:w-1/4 order-3 h-full">
-            <div class="bg-gray-800 rounded-xl border border-gray-700 shadow-lg overflow-hidden flex flex-col h-[500px]">
-                <div class="p-3 bg-gray-750 border-b border-gray-700 font-semibold text-sm">Move History</div>
-                <div id="move-history" class="flex-grow overflow-y-auto p-2 space-y-1 text-sm font-mono custom-scrollbar">
-                    <div class="text-gray-500 text-center italic mt-4">Game started</div>
+        <!-- Right Panel: Move History -->
+        <div class="w-full lg:w-72 order-3">
+            <div class="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700/50 overflow-hidden flex flex-col h-[500px]">
+                <div class="p-4 border-b border-gray-700/50 font-semibold text-sm flex items-center justify-between">
+                    <span class="text-gray-300">MOVE HISTORY</span>
+                    <span id="move-count" class="text-xs text-gray-500 font-mono">0 moves</span>
+                </div>
+                <div id="move-history" class="flex-grow overflow-y-auto p-3 space-y-1 text-sm font-mono custom-scrollbar">
+                    <div class="text-gray-500 text-center italic py-8">
+                        <i class="fa-solid fa-chess-board text-2xl mb-2 block opacity-30"></i>
+                        Game started
+                    </div>
                 </div>
             </div>
         </div>
@@ -187,483 +224,406 @@
     </main>
 
     <!-- Footer -->
-    <footer class="bg-gray-800 border-t border-gray-700 p-4 text-center text-sm text-gray-400">
-        Brought to you by <a href="https://www.deep-ml.com/problems" target="_blank" class="text-blue-400 hover:text-blue-300 transition font-semibold">Deep-ML</a>
+    <footer class="bg-gray-900/50 border-t border-gray-800 p-4 text-center text-sm text-gray-500">
+        Brought to you by <a href="https://www.deep-ml.com/problems" target="_blank" class="text-purple-400 hover:text-purple-300 transition font-semibold">Deep-ML</a>
     </footer>
 
-    <!-- Firebase & App Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc, increment, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- 1. Configuration & Globals ---
-        
+        // --- Config ---
         const firebaseConfig = {
             apiKey: "AIzaSyABBWaOz5jtfoethdlpWztnFpIDsb7SRvg",
             authDomain: "neuralzero-chess.firebaseapp.com",
             projectId: "neuralzero-chess",
             storageBucket: "neuralzero-chess.firebasestorage.app",
             messagingSenderId: "99508004902",
-            appId: "1:99508004902:web:544dbd03c9d31f2cbedee7",
-            measurementId: "G-Y6T07XBS8N"
+            appId: "1:99508004902:web:544dbd03c9d31f2cbedee7"
         };
 
-        const appId = 'neuralzero-chess-v2';
-        
+        const appId = 'neuralzero-chess-v3';
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // Helpers for base64 <-> ArrayBuffer (Firestore-safe)
+        // --- Debug Logger ---
+        function log(msg, type = 'info') {
+            const logEl = document.getElementById('debug-log');
+            if (!logEl) return;
+            
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            
+            console.log(`[${type.toUpperCase()}]`, msg);
+        }
+
+        // --- Helpers ---
         function arrayBufferToBase64(buffer) {
             const bytes = new Uint8Array(buffer);
             let binary = '';
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
-            }
+            for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
             return btoa(binary);
         }
 
         function base64ToArrayBuffer(base64) {
             const binary = atob(base64);
-            const len = binary.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binary.charCodeAt(i);
-            }
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
             return bytes.buffer;
         }
 
-        // Game Globals
+        // --- Game State ---
         let game = new Chess();
-        let board = null;
         let aiModel = null;
         let isTraining = false;
-        let gameHistory = [];
+        let isAIThinking = false;
+        let localGameHistory = []; // Positions from games played this session
         let lastGlobalCount = -1;
         let selectedSquare = null;
-        let trainingPending = false;
         let modelGeneration = 0;
+        let gameOver = false;
+        let localGamesPlayed = 0;
         
         const GAMES_PER_TRAINING = 2;
         const HIVE_SLOTS = 20;
-        const MCTS_SIMULATIONS = 80;
+        const MCTS_SIMULATIONS = 50; // Reduced for faster play
         const PIECE_VALUES = { p: 1, n: 3, b: 3.2, r: 5, q: 9, k: 0 };
-        const GAMMA = 0.99;
-        
-        // --- 2. AI / TensorFlow Logic ---
+        const GAMMA = 0.95;
 
-        class MCTSNode {
-            constructor(gameState, move = null, parent = null) {
-                this.gameState = new Chess(gameState.fen());
-                this.move = move;
-                this.parent = parent;
-                this.children = [];
-                this.visits = 0;
-                this.value = 0;
-                this.untriedMoves = gameState.moves({ verbose: true });
-            }
-
-            isFullyExpanded() {
-                return this.untriedMoves.length === 0;
-            }
-
-            bestChild(explorationParam = 1.41) {
-                return this.children.reduce((best, child) => {
-                    const exploitation = child.value / (child.visits + 1e-8);
-                    const exploration = Math.sqrt(Math.log(this.visits + 1) / (child.visits + 1e-8));
-                    const uct = exploitation + explorationParam * exploration;
-                    
-                    const bestExploitation = best.value / (best.visits + 1e-8);
-                    const bestExploration = Math.sqrt(Math.log(this.visits + 1) / (best.visits + 1e-8));
-                    const bestUct = bestExploitation + explorationParam * bestExploration;
-                    
-                    return uct > bestUct ? child : best;
-                });
-            }
-
-            expand() {
-                const move = this.untriedMoves.pop();
-                const newGame = new Chess(this.gameState.fen());
-                newGame.move(move);
-                const childNode = new MCTSNode(newGame, move, this);
-                this.children.push(childNode);
-                return childNode;
-            }
+        // --- UI Updates ---
+        function updateAIState(text) {
+            const el = document.getElementById('ai-state');
+            if (el) el.textContent = text;
         }
 
-        // boardToTensor without chess.castling / chess.kings
+        function updateStatus(msg, color = 'green') {
+            const statusEl = document.getElementById('game-status');
+            if (!statusEl) return;
+            const colors = { green: 'bg-green-500', yellow: 'bg-yellow-500', red: 'bg-red-500', purple: 'bg-purple-500', blue: 'bg-blue-500' };
+            statusEl.innerHTML = `<span class="w-2.5 h-2.5 rounded-full ${colors[color] || colors.green} status-dot ${color === 'yellow' ? 'animate-pulse' : ''}"></span><span>${msg}</span>`;
+        }
+
+        function updateMoveHistory() {
+            const historyEl = document.getElementById('move-history');
+            const countEl = document.getElementById('move-count');
+            if (!historyEl) return;
+
+            const history = game.history({ verbose: true });
+            
+            if (history.length === 0) {
+                historyEl.innerHTML = `<div class="text-gray-500 text-center italic py-8"><i class="fa-solid fa-chess-board text-2xl mb-2 block opacity-30"></i>Game started</div>`;
+                if (countEl) countEl.textContent = '0 moves';
+                return;
+            }
+
+            let html = '';
+            for (let i = 0; i < history.length; i += 2) {
+                const moveNum = Math.floor(i / 2) + 1;
+                const whiteMove = history[i];
+                const blackMove = history[i + 1];
+                html += `<div class="flex items-center py-1.5 px-2 rounded transition hover:bg-purple-500/10 ${i >= history.length - 2 ? 'animate-fade-in bg-purple-500/10' : ''}">
+                    <span class="w-8 text-gray-500 text-xs">${moveNum}.</span>
+                    <span class="flex-1 text-white">${whiteMove.san}</span>
+                    <span class="flex-1 text-gray-300">${blackMove ? blackMove.san : ''}</span>
+                </div>`;
+            }
+
+            historyEl.innerHTML = html;
+            historyEl.scrollTop = historyEl.scrollHeight;
+            if (countEl) countEl.textContent = `${history.length} moves`;
+        }
+
+        function updateStats() {
+            document.getElementById('local-games').textContent = localGamesPlayed;
+            document.getElementById('hive-positions').textContent = localGameHistory.length;
+            document.getElementById('model-gen').textContent = modelGeneration;
+        }
+
+        function updateProgressUI(globalCount) {
+            const batch = globalCount % GAMES_PER_TRAINING;
+            const percent = (batch / GAMES_PER_TRAINING) * 100;
+            document.getElementById('buffer-percent').textContent = `${batch} / ${GAMES_PER_TRAINING}`;
+            document.getElementById('training-progress').style.width = `${percent}%`;
+        }
+
+        // --- Neural Network ---
         function boardToTensor(fen) {
             const chess = new Chess(fen);
             const boardArr = chess.board();
             const input = new Float32Array(896);
             
-            const pieceMap = {
-                'p': 0, 'n': 1, 'b': 2, 'r': 3, 'q': 4, 'k': 5,
-                'P': 6, 'N': 7, 'B': 8, 'R': 9, 'Q': 10, 'K': 11
-            };
+            const pieceMap = { 'p': 0, 'n': 1, 'b': 2, 'r': 3, 'q': 4, 'k': 5, 'P': 6, 'N': 7, 'B': 8, 'R': 9, 'Q': 10, 'K': 11 };
 
-            // 1) Piece positions (768 features)
+            // Piece positions (768)
             for (let i = 0; i < 8; i++) {
                 for (let j = 0; j < 8; j++) {
                     const piece = boardArr[i][j];
                     if (piece) {
-                        const key = piece.color === 'w'
-                            ? piece.type.toUpperCase()
-                            : piece.type;
-                        const pieceIdx = pieceMap[key];
-                        const squareIndex = i * 8 + j;
-                        input[squareIndex * 12 + pieceIdx] = 1;
+                        const key = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
+                        input[(i * 8 + j) * 12 + pieceMap[key]] = 1;
                     }
                 }
             }
 
-            // 2) Mobility features (64 features)
+            // Mobility (64)
             let offset = 768;
             for (let i = 0; i < 8; i++) {
                 for (let j = 0; j < 8; j++) {
-                    const square =
-                        String.fromCharCode('a'.charCodeAt(0) + j) + (8 - i);
-                    const moves = chess.moves({ square, verbose: true });
-                    input[offset++] = Math.min(moves.length / 10.0, 1.0);
+                    const sq = String.fromCharCode('a'.charCodeAt(0) + j) + (8 - i);
+                    input[offset++] = Math.min(chess.moves({ square: sq }).length / 10, 1);
                 }
             }
 
-            // 3) Additional features (64 features)
+            // Additional features (64)
             offset = 832;
+            ['d4', 'd5', 'e4', 'e5'].forEach(sq => {
+                const p = chess.get(sq);
+                input[offset++] = p && p.color === 'w' ? 1 : 0;
+                input[offset++] = p && p.color === 'b' ? 1 : 0;
+            });
 
-            // 3a) Center control (d4, d5, e4, e5)
-            const centerSquares = ['d4', 'd5', 'e4', 'e5'];
-            for (const sq of centerSquares) {
-                const piece = chess.get(sq);
-                input[offset++] = piece && piece.color === 'w' ? 1 : 0;
-                input[offset++] = piece && piece.color === 'b' ? 1 : 0;
-            }
-
-            // 3b) Castling rights parsed from FEN
             const fenParts = fen.split(' ');
-            const castlingStr = fenParts[2] || '-';
-            const hasK = castlingStr.includes('K') ? 1 : 0;
-            const hasQ = castlingStr.includes('Q') ? 1 : 0;
-            const hask = castlingStr.includes('k') ? 1 : 0;
-            const hasq = castlingStr.includes('q') ? 1 : 0;
-            input[offset++] = hasK;
-            input[offset++] = hasQ;
-            input[offset++] = hask;
-            input[offset++] = hasq;
-
-            // 3c) King position features (scan board)
-            let wFileNorm = 0;
-            let wRankNorm = 0;
-            let bFileNorm = 0;
-            let bRankNorm = 0;
+            const castling = fenParts[2] || '-';
+            input[offset++] = castling.includes('K') ? 1 : 0;
+            input[offset++] = castling.includes('Q') ? 1 : 0;
+            input[offset++] = castling.includes('k') ? 1 : 0;
+            input[offset++] = castling.includes('q') ? 1 : 0;
 
             for (let i = 0; i < 8; i++) {
                 for (let j = 0; j < 8; j++) {
-                    const piece = boardArr[i][j];
-                    if (piece && piece.type === 'k') {
-                        const fileNorm = j / 7.0;
-                        const rankNorm = (7 - i) / 7.0;
-                        if (piece.color === 'w') {
-                            wFileNorm = fileNorm;
-                            wRankNorm = rankNorm;
-                        } else {
-                            bFileNorm = fileNorm;
-                            bRankNorm = rankNorm;
-                        }
+                    const p = boardArr[i][j];
+                    if (p && p.type === 'k') {
+                        if (p.color === 'w') { input[offset++] = j/7; input[offset++] = (7-i)/7; }
+                        else { input[offset++] = j/7; input[offset++] = (7-i)/7; }
                     }
                 }
             }
 
-            input[offset++] = wFileNorm;
-            input[offset++] = wRankNorm;
-            input[offset++] = bFileNorm;
-            input[offset++] = bRankNorm;
-
-            // 3d) Game phase (remaining material)
-            let totalMaterial = 0;
-            for (let row of boardArr) {
-                for (let p of row) {
-                    if (p && p.type !== 'k') {
-                        totalMaterial += PIECE_VALUES[p.type] || 0;
-                    }
-                }
-            }
-            input[offset++] = Math.min(totalMaterial / 78.0, 1.0);
-
-            // 3e) Turn to move
+            let material = 0;
+            for (let row of boardArr) for (let p of row) if (p && p.type !== 'k') material += PIECE_VALUES[p.type];
+            input[offset++] = Math.min(material / 78, 1);
             input[offset++] = chess.turn() === 'w' ? 1 : 0;
 
             return tf.tensor2d([input], [1, 896]);
         }
 
-        function createEnhancedModel() {
+        function createModel() {
+            log('Creating new neural network model', 'info');
             const model = tf.sequential();
             
-            model.add(tf.layers.dense({ 
-                units: 64, 
-                activation: 'relu', 
-                inputShape: [896],
-                kernelRegularizer: tf.regularizers.l2({ l2: 0.0001 })
-            }));
+            model.add(tf.layers.dense({ units: 128, activation: 'relu', inputShape: [896], kernelRegularizer: tf.regularizers.l2({ l2: 0.001 }) }));
+            model.add(tf.layers.batchNormalization());
             model.add(tf.layers.dropout({ rate: 0.3 }));
             
-            model.add(tf.layers.dense({ 
-                units: 64, 
-                activation: 'relu',
-                kernelRegularizer: tf.regularizers.l2({ l2: 0.0001 })
-            }));
-            model.add(tf.layers.dropout({ rate: 0.3 }));
-            
-            model.add(tf.layers.dense({ 
-                units: 32, 
-                activation: 'relu',
-                kernelRegularizer: tf.regularizers.l2({ l2: 0.0001 })
-            }));
+            model.add(tf.layers.dense({ units: 64, activation: 'relu', kernelRegularizer: tf.regularizers.l2({ l2: 0.001 }) }));
+            model.add(tf.layers.batchNormalization());
             model.add(tf.layers.dropout({ rate: 0.2 }));
             
-            model.add(tf.layers.dense({ 
-                units: 16, 
-                activation: 'relu'
-            }));
-            
+            model.add(tf.layers.dense({ units: 32, activation: 'relu' }));
             model.add(tf.layers.dense({ units: 1, activation: 'tanh' }));
             
-            model.compile({ 
-                optimizer: tf.train.adam(0.0005),
-                loss: 'meanSquaredError',
-                metrics: ['mae']
-            });
+            model.compile({ optimizer: tf.train.adam(0.001), loss: 'meanSquaredError', metrics: ['mae'] });
             
             return model;
         }
 
-        // ---- MODEL PERSISTENCE: shared model in Firestore + localStorage cache ----
-
-        async function saveModelToFirestore(model, generation) {
+        // --- Model Persistence ---
+        async function saveModel(model, gen) {
             try {
-                updateAIState("Saving brain...");
-
-                // Local cache
-                await model.save("localstorage://chess-ai-model-v2");
-
-                // Encode topology + weights manually (no Uint8Array in Firestore)
-                const modelTopology = model.toJSON(null, false); // plain object
+                log(`Saving model gen ${gen}...`, 'info');
+                updateAIState("Saving...");
+                
+                await model.save("localstorage://chess-ai-v3");
+                
+                const topology = model.toJSON(null, false);
                 const weights = model.getWeights();
                 const { data, specs } = await tf.io.encodeWeights(weights);
-                const weightDataBase64 = arrayBufferToBase64(data.buffer);
-
-                const metaRef = doc(
-                    db,
-                    "artifacts",
-                    appId,
-                    "public",
-                    "data",
-                    "model",
-                    "current"
-                );
-
-                await setDoc(
-                    metaRef,
-                    {
-                        generation,
-                        timestamp: Date.now(),
-                        modelTopology,
-                        weightSpecs: specs || [],
-                        weightDataBase64: weightDataBase64
-                    },
-                    { merge: true }
-                );
-
-                console.log(
-                    `Model gen ${generation} saved to Firestore (shared) & localStorage (cached).`
-                );
+                
+                const ref = doc(db, "artifacts", appId, "public", "data", "model", "current");
+                await setDoc(ref, {
+                    generation: gen,
+                    timestamp: Date.now(),
+                    modelTopology: topology,
+                    weightSpecs: specs,
+                    weightDataBase64: arrayBufferToBase64(data.buffer)
+                }, { merge: true });
+                
+                log(`Model gen ${gen} saved to cloud`, 'success');
                 updateAIState("Ready");
                 return true;
             } catch (e) {
-                console.error("Model save failed:", e);
-                updateAIState("Ready (save failed)");
+                log(`Save failed: ${e.message}`, 'error');
+                updateAIState("Ready");
                 return false;
             }
         }
 
-        async function loadModelFromFirestore() {
+        async function loadModel() {
             try {
-                updateAIState("Loading brain...");
-
-                const metaRef = doc(
-                    db,
-                    "artifacts",
-                    appId,
-                    "public",
-                    "data",
-                    "model",
-                    "current"
-                );
-                const metaSnap = await getDoc(metaRef);
-
-                if (metaSnap.exists()) {
-                    const data = metaSnap.data();
+                log('Loading model from cloud...', 'info');
+                updateAIState("Loading...");
+                
+                const ref = doc(db, "artifacts", appId, "public", "data", "model", "current");
+                const snap = await getDoc(ref);
+                
+                if (snap.exists()) {
+                    const data = snap.data();
                     modelGeneration = data.generation || 0;
-
+                    document.getElementById('model-gen').textContent = modelGeneration;
+                    
                     if (data.modelTopology && data.weightSpecs && data.weightDataBase64) {
-                        console.log("Found shared model in Firestore, rebuilding...");
-
                         const buffer = base64ToArrayBuffer(data.weightDataBase64);
-                        const weightMap = await tf.io.decodeWeights(
-                            buffer,
-                            data.weightSpecs
-                        );
-
-                        const loaded = await tf.models.modelFromJSON(
-                            data.modelTopology
-                        );
-
-                        loaded.compile({
-                            optimizer: tf.train.adam(0.0005),
-                            loss: "meanSquaredError",
-                            metrics: ["mae"]
-                        });
-
-                        const orderedTensors = data.weightSpecs.map(
-                            (spec) => weightMap[spec.name]
-                        );
-                        loaded.setWeights(orderedTensors);
-                        Object.values(weightMap).forEach((t) => t.dispose());
-
-                        // Cache locally for quick next loads
-                        await loaded.save("localstorage://chess-ai-model-v2");
-
-                        console.log("Loaded model from Firestore (shared brain).");
+                        const weightMap = await tf.io.decodeWeights(buffer, data.weightSpecs);
+                        
+                        const loaded = await tf.models.modelFromJSON(data.modelTopology);
+                        loaded.compile({ optimizer: tf.train.adam(0.001), loss: "meanSquaredError", metrics: ["mae"] });
+                        
+                        const tensors = data.weightSpecs.map(s => weightMap[s.name]);
+                        loaded.setWeights(tensors);
+                        Object.values(weightMap).forEach(t => t.dispose());
+                        
+                        await loaded.save("localstorage://chess-ai-v3");
+                        log(`Loaded model gen ${modelGeneration} from cloud`, 'success');
                         return loaded;
                     }
                 }
-
-                // Fallback: localStorage cache
+                
+                // Try localStorage
                 try {
-                    const localModel = await tf.loadLayersModel(
-                        "localstorage://chess-ai-model-v2"
-                    );
-                    localModel.compile({
-                        optimizer: tf.train.adam(0.0005),
-                        loss: "meanSquaredError",
-                        metrics: ["mae"]
-                    });
-                    console.log("Loaded model from localStorage (fallback).");
-                    return localModel;
+                    const local = await tf.loadLayersModel("localstorage://chess-ai-v3");
+                    local.compile({ optimizer: tf.train.adam(0.001), loss: "meanSquaredError", metrics: ["mae"] });
+                    log('Loaded model from localStorage', 'success');
+                    return local;
                 } catch (e) {
-                    console.log("No local model found, creating a fresh one.");
+                    log('No existing model found', 'warn');
                     return null;
                 }
             } catch (e) {
-                console.log("Model load failed, will create a new one:", e);
+                log(`Load failed: ${e.message}`, 'error');
                 return null;
             }
         }
 
         async function initModel() {
-            try {
-                aiModel = await loadModelFromFirestore();
-                
-                if (aiModel) {
-                    updateAIState("Ready (Loaded Brain)");
-                    return;
-                }
-                
-                console.log("Creating new model");
-                aiModel = createEnhancedModel();
-                modelGeneration = (modelGeneration || 0) + 1;
-                await saveModelToFirestore(aiModel, modelGeneration);
-                updateAIState("Ready (New Brain)");
-            } catch (e) {
-                console.error("Model init failed:", e);
-                aiModel = createEnhancedModel();
-                updateAIState("Ready");
+            aiModel = await loadModel();
+            if (!aiModel) {
+                aiModel = createModel();
+                modelGeneration = 1;
+                await saveModel(aiModel, modelGeneration);
             }
+            updateAIState("Ready");
+            updateStats();
         }
 
+        // --- Evaluation ---
         async function evaluateBoard(fen) {
             const chess = new Chess(fen);
             
+            // Material score
             let material = 0;
-            const board = chess.board();
-            for (let row of board) {
+            for (let row of chess.board()) {
                 for (let p of row) {
-                    if (p) {
-                        const val = PIECE_VALUES[p.type] || 0;
-                        material += (p.color === 'w' ? val : -val);
-                    }
+                    if (p) material += (p.color === 'w' ? 1 : -1) * (PIECE_VALUES[p.type] || 0);
                 }
             }
             
-            let centerControl = 0;
-            const centerSquares = ['d4', 'd5', 'e4', 'e5'];
-            for (const sq of centerSquares) {
-                const piece = chess.get(sq);
-                if (piece) {
-                    const value = piece.type === 'p' ? 0.5 : 1;
-                    centerControl += piece.color === 'w' ? value : -value;
-                }
-            }
+            // Center control
+            let center = 0;
+            ['d4', 'd5', 'e4', 'e5'].forEach(sq => {
+                const p = chess.get(sq);
+                if (p) center += (p.color === 'w' ? 1 : -1) * (p.type === 'p' ? 0.3 : 0.5);
+            });
             
-            let whiteMoves = chess.moves().length;
+            // Mobility
+            const wMoves = chess.moves().length;
             const fenParts = fen.split(' ');
-            fenParts[1] = 'b';
-            let blackMoves = 0;
+            fenParts[1] = fenParts[1] === 'w' ? 'b' : 'w';
+            let bMoves = 0;
             try {
-                chess.load(fenParts.join(' '));
-                blackMoves = chess.moves().length;
-            } catch(e) {
-                blackMoves = 0;
-            }
-            chess.load(fen);
-            const mobility = (whiteMoves - blackMoves) / 20.0;
+                const tempChess = new Chess(fenParts.join(' '));
+                bMoves = tempChess.moves().length;
+            } catch(e) {}
             
-            const heuristic = Math.tanh(
-                (material / 20.0) + 
-                (centerControl / 4.0) + 
-                (mobility * 0.3)
-            );
-
+            const heuristic = Math.tanh((material / 15) + (center / 2) + ((wMoves - bMoves) / 30));
+            
+            // Neural network evaluation
             const tensor = boardToTensor(fen);
-            const prediction = aiModel.predict(tensor);
-            const nnValue = (await prediction.data())[0];
+            const pred = aiModel.predict(tensor);
+            const nnValue = (await pred.data())[0];
             tensor.dispose();
-            prediction.dispose();
-
-            return (heuristic * 0.4) + (nnValue * 0.6);
+            pred.dispose();
+            
+            // Blend heuristic and NN (NN weight increases with training)
+            const nnWeight = Math.min(0.7, modelGeneration * 0.1);
+            return heuristic * (1 - nnWeight) + nnValue * nnWeight;
         }
 
-        async function runMCTS(rootState, simulations) {
+        // --- MCTS ---
+        class MCTSNode {
+            constructor(state, move = null, parent = null) {
+                this.state = new Chess(state.fen());
+                this.move = move;
+                this.parent = parent;
+                this.children = [];
+                this.visits = 0;
+                this.value = 0;
+                this.untried = state.moves({ verbose: true });
+            }
+            
+            bestChild(c = 1.41) {
+                if (!this.children.length) return null;
+                return this.children.reduce((best, child) => {
+                    const uct = (child.value / (child.visits + 1e-8)) + c * Math.sqrt(Math.log(this.visits + 1) / (child.visits + 1e-8));
+                    const bestUct = (best.value / (best.visits + 1e-8)) + c * Math.sqrt(Math.log(this.visits + 1) / (best.visits + 1e-8));
+                    return uct > bestUct ? child : best;
+                });
+            }
+            
+            expand() {
+                if (!this.untried.length) return null;
+                const move = this.untried.pop();
+                const newState = new Chess(this.state.fen());
+                newState.move(move);
+                const child = new MCTSNode(newState, move, this);
+                this.children.push(child);
+                return child;
+            }
+        }
+
+        async function runMCTS(rootState, sims) {
             const root = new MCTSNode(rootState);
             
-            for (let i = 0; i < simulations; i++) {
+            for (let i = 0; i < sims; i++) {
                 let node = root;
-                const simGame = new Chess(rootState.fen());
+                const sim = new Chess(rootState.fen());
                 
-                while (node.isFullyExpanded() && node.children.length > 0) {
+                // Selection
+                while (!node.untried.length && node.children.length) {
                     node = node.bestChild();
-                    simGame.move(node.move);
+                    if (node?.move) sim.move(node.move);
                 }
                 
-                if (!node.gameState.game_over() && node.untriedMoves.length > 0) {
+                // Expansion
+                if (!node.state.game_over() && node.untried.length) {
                     node = node.expand();
-                    simGame.load(node.gameState.fen());
+                    if (node) sim.load(node.state.fen());
                 }
                 
+                // Evaluation
                 let value = 0;
-                if (simGame.game_over()) {
-                    if (simGame.in_checkmate()) {
-                        value = simGame.turn() === 'w' ? -1 : 1;
-                    } else {
-                        value = 0;
-                    }
+                if (sim.game_over()) {
+                    value = sim.in_checkmate() ? (sim.turn() === 'w' ? -1 : 1) : 0;
                 } else {
-                    value = await evaluateBoard(simGame.fen());
+                    value = await evaluateBoard(sim.fen());
                 }
                 
-                while (node !== null) {
+                // Backprop
+                while (node) {
                     node.visits++;
                     node.value += value;
                     node = node.parent;
@@ -671,525 +631,441 @@
                 }
             }
             
-            if (root.children.length === 0) return null;
+            if (!root.children.length) return null;
             
-            // Slight randomness over best children (avoid always same move)
+            // Pick best move with slight randomness
             const sorted = [...root.children].sort((a, b) => b.visits - a.visits);
-            const topK = sorted.slice(0, Math.min(3, sorted.length));
-            const choice = topK[Math.floor(Math.random() * topK.length)];
-            return choice.move;
+            const topK = sorted.slice(0, Math.min(2, sorted.length));
+            return topK[Math.floor(Math.random() * topK.length)].move;
         }
 
-        async function getBestMove(depth) {
-            const moves = game.moves({ verbose: true });
-            if (moves.length === 0) return null;
-
+        async function getBestMove() {
             updateAIState("Thinking...");
-
             const move = await runMCTS(game, MCTS_SIMULATIONS);
-            
             if (move) {
-                const value = await evaluateBoard(game.fen());
-                const confEl = document.getElementById('ai-confidence');
-                if (confEl) confEl.textContent = value.toFixed(3);
+                const val = await evaluateBoard(game.fen());
+                document.getElementById('ai-confidence').textContent = val.toFixed(3);
             }
-            
             return move;
         }
 
-        async function uploadToHive(gameDataArray) {
+        // --- Hive Mind ---
+        async function uploadToHive(positions) {
+            if (!auth.currentUser || !positions.length) return;
+            
             try {
-                if (!auth.currentUser) return;
                 const slotId = `slot_${Math.floor(Math.random() * HIVE_SLOTS)}`;
-                const slotRef = doc(db, 'artifacts', appId, 'public', 'data', 'hive_memory', slotId);
-                
-                await setDoc(slotRef, {
-                    games: gameDataArray,
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'hive', slotId);
+                await setDoc(ref, {
+                    positions,
                     timestamp: Date.now(),
-                    contributor: auth.currentUser.uid
+                    uid: auth.currentUser.uid
                 });
-                console.log("Contributed to Hive Mind:", slotId);
+                log(`Uploaded ${positions.length} positions to hive`, 'success');
             } catch (e) {
-                console.error("Hive upload failed:", e);
+                log(`Hive upload failed: ${e.message}`, 'error');
             }
         }
 
-        async function fetchHiveMemories() {
+        async function fetchHiveData() {
             try {
-                if (!auth.currentUser) return [];
-                updateAIState("Syncing with Hive...");
+                log('Fetching hive data...', 'info');
+                const ref = collection(db, 'artifacts', appId, 'public', 'data', 'hive');
+                const snap = await getDocs(ref);
                 
-                const hiveRef = collection(db, 'artifacts', appId, 'public', 'data', 'hive_memory');
-                const snapshot = await getDocs(hiveRef);
-                
-                let collectiveMemories = [];
-                snapshot.forEach(docSnap => {
-                    const data = docSnap.data();
-                    if (data.games && Array.isArray(data.games)) {
-                        collectiveMemories = [...collectiveMemories, ...data.games];
-                    }
+                let all = [];
+                snap.forEach(doc => {
+                    const data = doc.data();
+                    if (data.positions) all = [...all, ...data.positions];
                 });
                 
-                console.log(`Downloaded ${collectiveMemories.length} positions from Hive.`);
-                return collectiveMemories;
+                log(`Fetched ${all.length} positions from hive`, 'success');
+                return all;
             } catch (e) {
-                console.error("Hive sync failed:", e);
+                log(`Hive fetch failed: ${e.message}`, 'error');
                 return [];
             }
         }
 
-        async function trainModel() {
-            if (isTraining) return;
+        // --- Training ---
+        async function trainModel(force = false) {
+            if (isTraining) {
+                log('Training already in progress', 'warn');
+                return;
+            }
+            
+            const hiveData = await fetchHiveData();
+            const allData = [...localGameHistory, ...hiveData];
+            
+            if (!force && allData.length < 20) {
+                log(`Not enough data for training (${allData.length} positions)`, 'warn');
+                return;
+            }
             
             isTraining = true;
+            log(`Starting training with ${allData.length} positions`, 'info');
             updateAIState("Training...");
             
             const overlay = document.getElementById('board-overlay');
-            const trainingInd = document.getElementById('training-indicator');
-            const msg = document.getElementById('overlay-msg');
+            const indicator = document.getElementById('training-indicator');
+            const btn = document.getElementById('btn-overlay-new');
+            const status = document.getElementById('training-status');
+            const detail = document.getElementById('training-detail');
             const title = document.getElementById('overlay-title');
+            const msg = document.getElementById('overlay-msg');
             
             overlay.classList.remove('hidden');
-            trainingInd.classList.remove('hidden');
-            title.textContent = "Hive Learning";
-            msg.textContent = "Community threshold reached. Upgrading brain...";
-            document.getElementById('btn-overlay-new').classList.add('hidden');
-
-            const communityGames = await fetchHiveMemories();
-            const trainingSet = [...gameHistory, ...communityGames];
-            msg.textContent = `Processing ${trainingSet.length} positions...`;
-
-            if (trainingSet.length === 0) {
-                finishTraining(overlay, trainingInd);
-                return;
-            }
-
-            const inputs = [];
-            const labels = [];
-            const MAX_TRAINING_SAMPLES = 600;
-            const shuffled = trainingSet.sort(() => 0.5 - Math.random()).slice(0, MAX_TRAINING_SAMPLES);
-
-            for (const record of shuffled) {
-                const t = boardToTensor(record.fen);
-                const d = await t.data();
-                inputs.push(Array.from(d));
-                labels.push(record.value);
-                t.dispose();
-            }
-
-            const inputTensor = tf.tensor2d(inputs, [inputs.length, 896]);
-            const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
-
-            await aiModel.fit(inputTensor, labelTensor, {
-                epochs: 20,
-                batchSize: 32,
-                shuffle: true,
-                validationSplit: 0.1,
-                callbacks: {
-                    onEpochEnd: (epoch, logs) => {
-                        console.log(`Epoch ${epoch + 1}: loss=${logs.loss.toFixed(4)}, val_loss=${logs.val_loss.toFixed(4)}`);
-                        msg.textContent = `Training Epoch ${epoch + 1}/20 - Loss: ${logs.loss.toFixed(4)}`;
-                    }
-                }
-            });
-
-            inputTensor.dispose();
-            labelTensor.dispose();
-
-            modelGeneration++;
-            msg.textContent = "Saving model...";
-            await saveModelToFirestore(aiModel, modelGeneration);
-
-            finishTraining(overlay, trainingInd);
-        }
-
-        function finishTraining(overlay, trainingInd) {
-            isTraining = false;
-            trainingPending = false;
-            updateAIState("Ready");
+            indicator.classList.remove('hidden');
+            btn.classList.add('hidden');
+            title.textContent = "Neural Network Training";
+            msg.textContent = `Processing ${allData.length} positions...`;
             
-            trainingInd.classList.add('hidden');
-            document.getElementById('btn-overlay-new').classList.remove('hidden');
-            document.getElementById('overlay-msg').textContent = "Training complete! I've learned from the community.";
-        }
-
-        function checkAndTriggerTraining() {
-            if (trainingPending && !isTraining) {
-                console.log("Triggering training...");
-                trainModel();
+            try {
+                // Prepare data
+                const shuffled = allData.sort(() => 0.5 - Math.random()).slice(0, 500);
+                const inputs = [];
+                const labels = [];
+                
+                for (const rec of shuffled) {
+                    const t = boardToTensor(rec.fen);
+                    inputs.push(Array.from(await t.data()));
+                    labels.push(rec.value);
+                    t.dispose();
+                }
+                
+                const xs = tf.tensor2d(inputs, [inputs.length, 896]);
+                const ys = tf.tensor2d(labels, [labels.length, 1]);
+                
+                status.textContent = "Training neural network...";
+                
+                await aiModel.fit(xs, ys, {
+                    epochs: 15,
+                    batchSize: 32,
+                    shuffle: true,
+                    validationSplit: 0.1,
+                    callbacks: {
+                        onEpochEnd: (epoch, logs) => {
+                            const loss = logs.loss.toFixed(4);
+                            const valLoss = logs.val_loss?.toFixed(4) || 'N/A';
+                            detail.textContent = `Epoch ${epoch + 1}/15 — Loss: ${loss}`;
+                            log(`Epoch ${epoch + 1}: loss=${loss}, val_loss=${valLoss}`, 'info');
+                        }
+                    }
+                });
+                
+                xs.dispose();
+                ys.dispose();
+                
+                modelGeneration++;
+                await saveModel(aiModel, modelGeneration);
+                
+                log(`Training complete! Model gen ${modelGeneration}`, 'success');
+                status.textContent = "Training complete!";
+                detail.textContent = `Model generation: ${modelGeneration}`;
+                
+            } catch (e) {
+                log(`Training failed: ${e.message}`, 'error');
+                status.textContent = "Training failed";
+                detail.textContent = e.message;
             }
+            
+            isTraining = false;
+            updateAIState("Ready");
+            updateStats();
+            
+            setTimeout(() => {
+                indicator.classList.add('hidden');
+                btn.classList.remove('hidden');
+                msg.textContent = "Training complete! Ready for a new game.";
+            }, 1500);
         }
 
-        const PIECE_UNICODE = {
-            'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚',
-            'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔'
-        };
-
-        const PIECE_FONTAWESOME = {
-            'p': 'fa-chess-pawn', 'n': 'fa-chess-knight', 'b': 'fa-chess-bishop', 
-            'r': 'fa-chess-rook', 'q': 'fa-chess-queen', 'k': 'fa-chess-king',
-            'P': 'fa-chess-pawn', 'N': 'fa-chess-knight', 'B': 'fa-chess-bishop', 
-            'R': 'fa-chess-rook', 'Q': 'fa-chess-queen', 'K': 'fa-chess-king'
-        };
-
-        let iconStyle = localStorage.getItem('chess-icon-style') || 'unicode';
+        // --- Board Rendering ---
+        const PIECE_UNICODE = { 'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚', 'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔' };
+        const PIECE_FA = { 'p': 'fa-chess-pawn', 'n': 'fa-chess-knight', 'b': 'fa-chess-bishop', 'r': 'fa-chess-rook', 'q': 'fa-chess-queen', 'k': 'fa-chess-king' };
+        let iconStyle = localStorage.getItem('chess-icon') || 'unicode';
 
         function renderBoard() {
             const boardEl = document.getElementById('chessboard');
-            boardEl.innerHTML = '';
-            const boardState = game.board();
+            if (!boardEl) return;
             
-            if (game.game_over()) {
-                handleGameOver();
-            }
+            boardEl.innerHTML = '';
+            const state = game.board();
+            const history = game.history({ verbose: true });
+            const last = history.length ? history[history.length - 1] : null;
 
-            let isWhiteSq = true;
+            let isWhite = true;
             for (let i = 0; i < 8; i++) {
                 for (let j = 0; j < 8; j++) {
-                    const squareCode = String.fromCharCode('a'.charCodeAt(0) + j) + (8 - i);
-                    const squareDiv = document.createElement('div');
+                    const sq = String.fromCharCode('a'.charCodeAt(0) + j) + (8 - i);
+                    const div = document.createElement('div');
                     
-                    let baseClass = "w-full h-full flex items-center justify-center text-4xl sm:text-5xl select-none square relative";
-                    let colorClass = isWhiteSq ? "bg-[#ebecd0] text-black" : "bg-[#779556] text-black";
-                    
-                    const history = game.history({ verbose: true });
-                    if (history.length > 0) {
-                        const last = history[history.length - 1];
-                        if (last.from === squareCode || last.to === squareCode) {
-                            colorClass = isWhiteSq ? "bg-[#f5f682]" : "bg-[#baca44]";
-                        }
-                    }
+                    let bg = isWhite ? '#ebecd0' : '#779556';
+                    if (last && (last.from === sq || last.to === sq)) bg = isWhite ? '#f5f682' : '#baca44';
+                    if (selectedSquare === sq) bg = '#7fa650';
 
-                    if (selectedSquare === squareCode) {
-                        colorClass = "bg-[#bbc456]";
-                    }
+                    div.className = 'w-full h-full flex items-center justify-center text-4xl sm:text-5xl select-none relative';
+                    div.style.backgroundColor = bg;
+                    div.dataset.square = sq;
+                    div.onclick = () => onSquareClick(sq);
 
-                    squareDiv.className = `${baseClass} ${colorClass}`;
-                    squareDiv.dataset.square = squareCode;
-                    squareDiv.onclick = () => onSquareClick(squareCode);
-
-                    const piece = boardState[i][j];
+                    const piece = state[i][j];
                     if (piece) {
-                        const pieceSpan = document.createElement('span');
-                        const pieceKey = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
+                        const span = document.createElement('span');
+                        const key = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
                         
                         if (iconStyle === 'fontawesome') {
-                            const iconClass = PIECE_FONTAWESOME[pieceKey] || PIECE_FONTAWESOME[piece.type];
-                            pieceSpan.innerHTML = `<i class="fa-solid ${iconClass}"></i>`;
-                            pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
-                            if (piece.color === 'w') {
-                                pieceSpan.style.color = '#fff';
-                                pieceSpan.style.textShadow = '0 0 2px #000';
-                            } else {
-                                pieceSpan.style.color = '#000';
-                                pieceSpan.style.textShadow = '0 0 1px #fff';
-                            }
+                            span.innerHTML = `<i class="fa-solid ${PIECE_FA[piece.type]}"></i>`;
                         } else {
-                            pieceSpan.textContent = PIECE_UNICODE[pieceKey] || PIECE_UNICODE[piece.type];
-                            pieceSpan.className = `chess-piece ${piece.color === 'w' ? 'text-gray-100 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]' : 'text-black drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]'}`;
-                            if (piece.color === 'w') {
-                                pieceSpan.style.color = '#fff';
-                                pieceSpan.style.textShadow = '0 0 2px #000';
-                            } else {
-                                pieceSpan.style.color = '#000';
-                                pieceSpan.style.textShadow = '0 0 1px #fff';
-                            }
+                            span.textContent = PIECE_UNICODE[key];
                         }
-                        squareDiv.appendChild(pieceSpan);
+                        
+                        span.className = 'chess-piece';
+                        span.style.color = piece.color === 'w' ? '#fff' : '#000';
+                        span.style.textShadow = piece.color === 'w' ? '0 2px 4px rgba(0,0,0,0.5)' : '0 1px 2px rgba(255,255,255,0.3)';
+                        div.appendChild(span);
                     }
                     
                     if (selectedSquare) {
                         const moves = game.moves({ square: selectedSquare, verbose: true });
-                        const isMove = moves.find(m => m.to === squareCode);
-                        if (isMove) {
+                        const m = moves.find(x => x.to === sq);
+                        if (m) {
                             const hint = document.createElement('div');
-                            hint.className = isMove.captured 
-                                ? "absolute inset-0 border-4 border-red-400/50 rounded-full scale-90" 
-                                : "absolute w-3 h-3 bg-black/20 rounded-full";
-                            squareDiv.appendChild(hint);
+                            hint.className = m.captured ? 'absolute inset-1 border-4 border-red-500/60 rounded-full move-hint' : 'absolute w-4 h-4 bg-black/25 rounded-full move-hint';
+                            div.appendChild(hint);
                         }
                     }
 
-                    boardEl.appendChild(squareDiv);
-                    isWhiteSq = !isWhiteSq;
+                    boardEl.appendChild(div);
+                    isWhite = !isWhite;
                 }
-                isWhiteSq = !isWhiteSq;
+                isWhite = !isWhite;
             }
-            updateStatus();
+            
+            updateMoveHistory();
+            if (!gameOver) updateStatus(game.turn() === 'w' ? "Your Turn (White)" : "AI Thinking...", game.turn() === 'w' ? 'green' : 'yellow');
         }
 
-        async function onSquareClick(square) {
-            if (isTraining) return;
-            if (game.turn() === 'b' && !game.game_over()) return;
+        // --- Game Logic ---
+        async function onSquareClick(sq) {
+            if (isTraining || isAIThinking || gameOver || game.turn() === 'b') return;
 
-            if (selectedSquare === square) {
+            if (selectedSquare === sq) {
                 selectedSquare = null;
                 renderBoard();
                 return;
             }
 
             if (selectedSquare) {
-                const move = game.move({
-                    from: selectedSquare,
-                    to: square,
-                    promotion: 'q'
-                });
-
+                const move = game.move({ from: selectedSquare, to: sq, promotion: 'q' });
                 if (move) {
                     selectedSquare = null;
                     renderBoard();
-                    if (!game.game_over()) {
-                        setTimeout(makeAIMove, 200);
-                    }
-                } else {
-                    const piece = game.get(square);
-                    if (piece && piece.color === game.turn()) {
-                        selectedSquare = square;
-                        renderBoard();
-                    } else {
-                        selectedSquare = null;
-                        renderBoard();
-                    }
+                    if (game.game_over()) handleGameOver();
+                    else setTimeout(makeAIMove, 100);
+                    return;
                 }
-            } else {
-                const piece = game.get(square);
-                if (piece && piece.color === game.turn()) {
-                    selectedSquare = square;
+                
+                const piece = game.get(sq);
+                if (piece?.color === 'w') {
+                    selectedSquare = sq;
                     renderBoard();
+                    return;
                 }
+                
+                selectedSquare = null;
+                renderBoard();
+                return;
+            }
+
+            const piece = game.get(sq);
+            if (piece?.color === 'w') {
+                selectedSquare = sq;
+                renderBoard();
             }
         }
 
         async function makeAIMove() {
-            if (game.game_over()) return;
+            if (game.game_over() || isAIThinking) return;
             
-            updateAIState("Thinking...");
-            updateStatus("AI is thinking...");
+            isAIThinking = true;
+            await new Promise(r => setTimeout(r, 50));
             
-            setTimeout(async () => {
-                const move = await getBestMove(2);
-                if (move) {
-                    game.move(move);
-                    renderBoard();
-                    updateAIState("Ready");
-                }
-            }, 10);
-        }
-
-        function updateStatus(msg) {
-            const statusEl = document.getElementById('game-status');
-            if (msg) {
-                statusEl.innerHTML = `<span class="w-3 h-3 rounded-full bg-yellow-500 animate-pulse"></span><span>${msg}</span>`;
-                return;
+            const move = await getBestMove();
+            if (move) {
+                game.move(move);
+                renderBoard();
+                updateAIState("Ready");
+                if (game.game_over()) handleGameOver();
             }
             
-            if (game.turn() === 'w') {
-                statusEl.innerHTML = `<span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span><span>Your Turn (White)</span>`;
-            } else {
-                statusEl.innerHTML = `<span class="w-3 h-3 rounded-full bg-red-500 animate-pulse"></span><span>AI Turn (Black)</span>`;
-            }
+            isAIThinking = false;
         }
 
-        function updateAIState(text) {
-            document.getElementById('ai-state').textContent = text;
-        }
-
-        function recordGameData(result) {
-            const tempGame = new Chess();
-            const history = game.history();
-            
-            let currentGamePositions = [];
-            
-            const positions = [];
-            history.forEach(move => {
-                positions.push(tempGame.fen());
-                tempGame.move(move);
-            });
-            positions.push(tempGame.fen());
-            
-            const values = [];
-            let currentValue = result;
-            
-            for (let i = positions.length - 1; i >= 0; i--) {
-                values[i] = currentValue;
-                currentValue = currentValue * GAMMA;
-            }
-            
-            for (let i = 0; i < positions.length; i++) {
-                currentGamePositions.push({
-                    fen: positions[i],
-                    value: values[i]
-                });
-            }
-            
-            gameHistory = [...gameHistory, ...currentGamePositions];
-            uploadToHive(currentGamePositions);
-            incrementGlobalStats();
-        }
-
-        function updateGlobalProgressUI(globalCount) {
-            const batchProgress = globalCount % GAMES_PER_TRAINING;
-            const percent = Math.min(100, (batchProgress / GAMES_PER_TRAINING) * 100);
-            
-            document.getElementById('local-games-count').textContent = `${batchProgress} / ${GAMES_PER_TRAINING}`;
-            document.getElementById('training-progress').style.width = `${percent}%`;
-            document.getElementById('buffer-percent').textContent = `${Math.floor(percent)}%`;
-        }
-
-        async function handleGameOver() {
-            let msg = "";
-            let result = 0;
+        function handleGameOver() {
+            gameOver = true;
+            let msg = "", result = 0;
 
             if (game.in_checkmate()) {
                 if (game.turn() === 'w') {
-                    msg = "Checkmate! AI (Black) Wins!";
+                    msg = "Checkmate! AI Wins!";
                     result = -1;
+                    updateStatus("AI Wins!", 'red');
                 } else {
-                    msg = "Checkmate! You (White) Win!";
+                    msg = "Checkmate! You Win!";
                     result = 1;
+                    updateStatus("You Win!", 'green');
                 }
-            } else if (game.in_draw()) {
-                msg = "Draw!";
-                result = 0;
             } else {
-                msg = "Game Over";
+                msg = game.in_stalemate() ? "Stalemate!" : game.in_draw() ? "Draw!" : "Game Over";
+                updateStatus("Draw!", 'yellow');
             }
 
-            document.getElementById('overlay-msg').textContent = msg;
-            document.getElementById('board-overlay').classList.remove('hidden');
-            document.getElementById('training-indicator').classList.add('hidden');
-            document.getElementById('overlay-title').textContent = "Game Finished";
+            log(`Game over: ${msg}`, 'info');
             
-            recordGameData(result);
-            checkAndTriggerTraining();
+            document.getElementById('overlay-title').textContent = "Game Over";
+            document.getElementById('overlay-msg').textContent = msg;
+            document.getElementById('training-indicator').classList.add('hidden');
+            document.getElementById('btn-overlay-new').classList.remove('hidden');
+            document.getElementById('board-overlay').classList.remove('hidden');
+            
+            recordGame(result);
         }
-        
-        async function initApp() {
-            try {
-                await signInAnonymously(auth);
-                
-                const statsRef = doc(db, 'artifacts', appId, 'public', 'data', 'chess_stats', 'global');
-                
-                onSnapshot(statsRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        const currentCount = data.gamesPlayed || 0;
-                        
-                        document.getElementById('global-counter').textContent = currentCount.toLocaleString();
-                        updateGlobalProgressUI(currentCount);
-                        
-                        if (lastGlobalCount === -1) {
-                            lastGlobalCount = currentCount;
-                        }
 
-                        const lastBatch = Math.floor(lastGlobalCount / GAMES_PER_TRAINING);
-                        const currentBatch = Math.floor(currentCount / GAMES_PER_TRAINING);
-
-                        if (currentBatch > lastBatch) {
-                            console.log("Global batch complete! Training pending...");
-                            trainingPending = true;
-                            
-                            if (game.game_over() || game.history().length === 0) {
-                                checkAndTriggerTraining();
-                            }
-                        }
-                        
-                        lastGlobalCount = currentCount;
-
-                    } else {
-                         setDoc(statsRef, { gamesPlayed: 0 }, { merge: true });
-                         document.getElementById('global-counter').textContent = "0";
-                    }
-                }, (error) => {
-                    console.error("Stats listener error:", error);
-                    document.getElementById('global-counter').textContent = "Offline";
-                });
-
-                await initModel();
-                renderBoard();
-            } catch (e) {
-                console.error("Auth/Init failed:", e);
-                document.getElementById('global-counter').textContent = "Offline";
-                await initModel();
-                renderBoard();
+        function recordGame(result) {
+            const temp = new Chess();
+            const history = game.history();
+            const positions = [];
+            
+            history.forEach(m => {
+                positions.push(temp.fen());
+                temp.move(m);
+            });
+            positions.push(temp.fen());
+            
+            // Assign values with decay
+            let val = result;
+            for (let i = positions.length - 1; i >= 0; i--) {
+                localGameHistory.push({ fen: positions[i], value: val });
+                val *= GAMMA;
             }
+            
+            localGamesPlayed++;
+            uploadToHive(localGameHistory.slice(-positions.length));
+            incrementGlobalStats();
+            updateStats();
+            
+            log(`Recorded ${positions.length} positions from game`, 'success');
         }
 
         async function incrementGlobalStats() {
-             try {
-                if (!auth.currentUser) return;
-                const statsRef = doc(db, 'artifacts', appId, 'public', 'data', 'chess_stats', 'global');
-                await updateDoc(statsRef, {
-                    gamesPlayed: increment(1)
-                });
-             } catch(e) {
-                 console.log("Could not update global stats", e);
-             }
+            try {
+                const ref = doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'global');
+                await updateDoc(ref, { gamesPlayed: increment(1) }).catch(() => setDoc(ref, { gamesPlayed: 1 }));
+            } catch(e) {
+                log(`Stats update failed: ${e.message}`, 'error');
+            }
         }
 
-        const iconStyleSelect = document.getElementById('icon-style');
-        iconStyleSelect.value = iconStyle;
-        iconStyleSelect.addEventListener('change', (e) => {
-            iconStyle = e.target.value;
-            localStorage.setItem('chess-icon-style', iconStyle);
-            renderBoard();
-        });
-
-        document.getElementById('btn-new-game').addEventListener('click', () => {
-            if (trainingPending && !isTraining) {
-                checkAndTriggerTraining();
-            } else {
-                game.reset();
-                selectedSquare = null;
-                renderBoard();
-                document.getElementById('move-history').innerHTML = '<div class="text-gray-500 text-center italic mt-4">Game started</div>';
-                document.getElementById('board-overlay').classList.add('hidden');
-                updateAIState("Ready");
-            }
-        });
-
-        document.getElementById('btn-overlay-new').addEventListener('click', () => {
+        function startNewGame() {
             game.reset();
             selectedSquare = null;
+            gameOver = false;
+            isAIThinking = false;
             renderBoard();
-            document.getElementById('move-history').innerHTML = '<div class="text-gray-500 text-center italic mt-4">Game started</div>';
-            document.getElementById('board-overlay').classList.add('hidden');
             updateAIState("Ready");
+            document.getElementById('board-overlay').classList.add('hidden');
+            document.getElementById('ai-confidence').textContent = '0.000';
+            log('New game started', 'info');
+        }
+
+        // --- Init ---
+        async function init() {
+            log('Initializing app...', 'info');
+            
+            try {
+                await signInAnonymously(auth);
+                log('Signed in anonymously', 'success');
+                
+                const statsRef = doc(db, 'artifacts', appId, 'public', 'data', 'stats', 'global');
+                
+                // Create stats doc if needed
+                const statsSnap = await getDoc(statsRef);
+                if (!statsSnap.exists()) {
+                    await setDoc(statsRef, { gamesPlayed: 0 });
+                }
+                
+                onSnapshot(statsRef, (snap) => {
+                    if (snap.exists()) {
+                        const count = snap.data().gamesPlayed || 0;
+                        document.getElementById('global-counter').textContent = count.toLocaleString();
+                        updateProgressUI(count);
+                        
+                        // Check for training trigger
+                        if (lastGlobalCount >= 0) {
+                            const lastBatch = Math.floor(lastGlobalCount / GAMES_PER_TRAINING);
+                            const currBatch = Math.floor(count / GAMES_PER_TRAINING);
+                            if (currBatch > lastBatch && !isTraining) {
+                                log('Training threshold reached!', 'success');
+                                if (gameOver || game.history().length === 0) {
+                                    trainModel();
+                                }
+                            }
+                        }
+                        lastGlobalCount = count;
+                    }
+                }, (e) => {
+                    log(`Stats listener error: ${e.message}`, 'error');
+                    document.getElementById('global-counter').textContent = "Offline";
+                });
+                
+            } catch (e) {
+                log(`Auth failed: ${e.message}`, 'error');
+                document.getElementById('global-counter').textContent = "Offline";
+            }
+            
+            await initModel();
+            renderBoard();
+            log('App ready!', 'success');
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('icon-style').value = iconStyle;
+        document.getElementById('icon-style').addEventListener('change', (e) => {
+            iconStyle = e.target.value;
+            localStorage.setItem('chess-icon', iconStyle);
+            renderBoard();
         });
 
-        document.getElementById('btn-reset-ai').addEventListener('click', async () => {
-            if(confirm("This will wipe the AI's memory (local & shared) and reset its brain. Are you sure?")) {
-                try {
-                    await tf.io.removeModel('localstorage://chess-ai-model-v2');
-                } catch(e) {
-                    console.log("Error removing local model:", e);
-                }
-                // Clear Firestore model doc with Firestore-safe values
-                try {
-                    const metaRef = doc(
-                        db,
-                        "artifacts",
-                        appId,
-                        "public",
-                        "data",
-                        "model",
-                        "current"
-                    );
-                    await setDoc(metaRef, {
-                        modelTopology: null,
-                        weightSpecs: [],
-                        weightDataBase64: null,
-                        generation: 0
-                    }, { merge: true });
-                } catch(e) {
-                    console.log("Error clearing Firestore model:", e);
-                }
-                location.reload();
+        document.getElementById('btn-new-game').addEventListener('click', () => !isTraining && startNewGame());
+        document.getElementById('btn-overlay-new').addEventListener('click', () => !isTraining && startNewGame());
+        
+        document.getElementById('btn-force-train').addEventListener('click', () => {
+            if (!isTraining) {
+                log('Force training requested', 'info');
+                trainModel(true);
             }
         });
+        
+        document.getElementById('btn-reset-ai').addEventListener('click', async () => {
+            if (!confirm("Reset AI brain? This clears local and cloud model.")) return;
+            
+            try {
+                await tf.io.removeModel('localstorage://chess-ai-v3');
+                const ref = doc(db, "artifacts", appId, "public", "data", "model", "current");
+                await setDoc(ref, { modelTopology: null, weightSpecs: [], weightDataBase64: null, generation: 0 });
+                log('AI brain reset', 'warn');
+                location.reload();
+            } catch(e) {
+                log(`Reset failed: ${e.message}`, 'error');
+            }
+        });
+        
+        document.getElementById('btn-clear-log').addEventListener('click', () => {
+            document.getElementById('debug-log').innerHTML = '';
+        });
 
-        initApp();
-
+        init();
     </script>
 </body>
 </html>
